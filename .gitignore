@@ -7,6 +7,10 @@
 *.exe
 *.o
 *.a
+# Stray Go binaries left at module roots by `go build ./cmd/<name>`
+/nakli-hub/nakli-hub
+/nakli-cli/nakli-cli
+/nakli-local-bridge/nakli-local-bridge
 
 # Go
 **/vendor/
