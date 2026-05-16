@@ -14,15 +14,68 @@ import (
 )
 
 // routes wires the protocol endpoints to handler funcs. Unauthenticated
-// endpoints (/health, /discover) skip authMiddleware.
+// endpoints (/health, /discover, /identity/pair/complete) skip authMiddleware.
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /fabric/v1/health", s.handleHealth)
 	mux.HandleFunc("GET /fabric/v1/discover", s.handleDiscover)
 
+	// Vault.
 	mux.Handle("POST /fabric/v1/vault/append",
 		s.authMiddleware(s.idempotencyMiddleware("vault/append", http.HandlerFunc(s.handleVaultAppend))))
 	mux.Handle("GET /fabric/v1/vault/stream/{namespace}/{stream_id}",
 		s.authMiddleware(http.HandlerFunc(s.handleVaultRead)))
+	mux.Handle("GET /fabric/v1/vault/streams/{namespace}",
+		s.authMiddleware(http.HandlerFunc(s.handleVaultListStreams)))
+	mux.Handle("POST /fabric/v1/vault/subscribe",
+		s.authMiddleware(http.HandlerFunc(s.handleVaultSubscribe)))
+
+	// History.
+	mux.Handle("POST /fabric/v1/history/append",
+		s.authMiddleware(s.idempotencyMiddleware("history/append", http.HandlerFunc(s.handleHistoryAppend))))
+	mux.Handle("GET /fabric/v1/history/stream/{stream_id}",
+		s.authMiddleware(http.HandlerFunc(s.handleHistoryRead)))
+	mux.Handle("GET /fabric/v1/history/verify/{stream_id}",
+		s.authMiddleware(http.HandlerFunc(s.handleHistoryVerify)))
+
+	// Identity.
+	mux.Handle("GET /fabric/v1/identity/principal",
+		s.authMiddleware(http.HandlerFunc(s.handleIdentityPrincipal)))
+	mux.Handle("POST /fabric/v1/identity/pair/initiate",
+		s.authMiddleware(http.HandlerFunc(s.handlePairInitiate)))
+	// pair/complete is unauthenticated — the pairing_token is the auth.
+	mux.HandleFunc("POST /fabric/v1/identity/pair/complete", s.handlePairComplete)
+
+	// Grant.
+	mux.Handle("POST /fabric/v1/grant/mint",
+		s.authMiddleware(s.idempotencyMiddleware("grant/mint", http.HandlerFunc(s.handleGrantMint))))
+	mux.Handle("POST /fabric/v1/grant/verify",
+		s.authMiddleware(http.HandlerFunc(s.handleGrantVerify)))
+	mux.Handle("POST /fabric/v1/grant/revoke",
+		s.authMiddleware(s.idempotencyMiddleware("grant/revoke", http.HandlerFunc(s.handleGrantRevoke))))
+
+	// LLM (Phase 2 surface; minimal v1.0 routing).
+	mux.Handle("GET /fabric/v1/llm/routes",
+		s.authMiddleware(http.HandlerFunc(s.handleLLMRoutes)))
+	mux.Handle("POST /fabric/v1/llm/complete",
+		s.authMiddleware(s.idempotencyMiddleware("llm/complete", http.HandlerFunc(s.handleLLMComplete))))
+
+	// Bridge (M5.5 fills in the adapter framework).
+	mux.Handle("GET /fabric/v1/bridge/adapters",
+		s.authMiddleware(http.HandlerFunc(s.handleBridgeAdapters)))
+	mux.Handle("POST /fabric/v1/bridge/call",
+		s.authMiddleware(s.idempotencyMiddleware("bridge/call", http.HandlerFunc(s.handleBridgeCall))))
+	mux.Handle("POST /fabric/v1/bridge/approve",
+		s.authMiddleware(http.HandlerFunc(s.handleBridgeApprove)))
+
+	// Sync (Phase 2 multi-anchor).
+	mux.Handle("GET /fabric/v1/sync/peers",
+		s.authMiddleware(http.HandlerFunc(s.handleSyncPeers)))
+	mux.Handle("GET /fabric/v1/sync/pull",
+		s.authMiddleware(http.HandlerFunc(s.handleSyncPull)))
+	mux.Handle("POST /fabric/v1/sync/push",
+		s.authMiddleware(http.HandlerFunc(s.handleSyncPush)))
+	mux.Handle("POST /fabric/v1/sync/conflict-ack",
+		s.authMiddleware(http.HandlerFunc(s.handleSyncConflictAck)))
 
 	// Forward-compat hook 4: reserve the cluster/* namespace with 501.
 	mux.HandleFunc("/fabric/v1/cluster/", func(w http.ResponseWriter, r *http.Request) {
@@ -171,16 +224,14 @@ func (s *Server) handleVaultAppend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.checkAuth(w, r, scopeRequirement{
+		Primitive: "vault",
+		Namespace: req.Namespace,
+		Operation: "write",
+	}); err != nil {
+		return
+	}
 	g := grantFromCtx(ctx)
-	scope := g.Identifier.Scope
-	if scope.Primitive != "vault" && scope.Primitive != "" {
-		writeError(w, r, http.StatusForbidden, ErrScopeDenied, "Grant primitive does not authorize vault", false)
-		return
-	}
-	if scope.Namespace != "" && scope.Namespace != "*" && scope.Namespace != req.Namespace {
-		writeError(w, r, http.StatusForbidden, ErrScopeDenied, "Grant namespace does not authorize this stream", false)
-		return
-	}
 
 	in := storage.AppendInput{
 		Namespace:           req.Namespace,
@@ -245,14 +296,11 @@ func (s *Server) handleVaultRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	g := grantFromCtx(ctx)
-	scope := g.Identifier.Scope
-	if scope.Primitive != "vault" && scope.Primitive != "" {
-		writeError(w, r, http.StatusForbidden, ErrScopeDenied, "Grant primitive does not authorize vault", false)
-		return
-	}
-	if scope.Namespace != "" && scope.Namespace != "*" && scope.Namespace != namespace {
-		writeError(w, r, http.StatusForbidden, ErrScopeDenied, "Grant namespace does not authorize this stream", false)
+	if err := s.checkAuth(w, r, scopeRequirement{
+		Primitive: "vault",
+		Namespace: namespace,
+		Operation: "read",
+	}); err != nil {
 		return
 	}
 

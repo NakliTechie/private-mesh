@@ -2,7 +2,7 @@
 
 Hub binary — the canonical Private Mesh transport. Runs on the user's anchor (a small always-on machine, typically self-hosted) and serves the fabric protocol over HTTP.
 
-**Status:** alpha (M2 phase 2a — gate met: `nakli-hub serve` starts; `/fabric/v1/health` returns ok; manually-crafted Grant + Vault append/read works end-to-end. Phase 2b adds history, identity/pair, grant endpoints, sync, llm, bridge, backup/restore, service units.)
+**Status:** alpha (M2 phase 2b — full protocol surface implemented; vault read/write/list/subscribe, history with hash chain + verify, identity (principal + pair flow), grant (mint/verify/revoke), LLM/Bridge/Sync stubs, caveat enforcement (time / operation / namespace / nondelegatable / idempotency-required). Phase 2c remaining: `backup`/`restore`, systemd unit + launchd plist, `status`/`conformance` stubs, M2 close-out.)
 
 ## Quick start
 
@@ -40,17 +40,61 @@ curl http://127.0.0.1:7842/fabric/v1/discover
 - `internal/server/` — HTTP mux (Go 1.22 patterns), slog logging, response envelopes, middleware (logging, CORS, macaroon auth, idempotency), handlers
 - `cmd/nakli-hub/` — entrypoint
 
-## Endpoints implemented (Phase 2a)
+## Endpoints implemented (Phase 2b)
+
+### Public
 
 | Method + path | Auth | Notes |
 | --- | --- | --- |
 | `GET  /fabric/v1/health` | none | transport_id, version, uptime, principals_count, event_count |
 | `GET  /fabric/v1/discover` | none | supported_primitives + caveat catalogue |
-| `POST /fabric/v1/vault/append` | macaroon + idempotency | refuses `fabric.*` namespaces (forward-compat hook 6) |
-| `GET  /fabric/v1/vault/stream/{namespace}/{stream_id}` | macaroon | `?since=<event-id>&limit=<n>` |
-| `*    /fabric/v1/cluster/*` | none | HTTP 501 `not_implemented` (forward-compat hook 4) |
+| `POST /fabric/v1/identity/pair/complete` | pairing_token | enrolls a new device, returns enrollment Grant + transport configs |
 
-Phase 2b will add the remaining protocol surface (history, identity, grant, sync, llm, bridge) plus SSE for `/vault/subscribe`.
+### Authenticated (X-Fabric-Grant)
+
+| Method + path | Idempotency | Notes |
+| --- | --- | --- |
+| `POST /fabric/v1/vault/append`              | required | refuses `fabric.*` namespaces (hook 6) |
+| `GET  /fabric/v1/vault/stream/{ns}/{sid}`   | — | `?since=<event-id>&limit=<n>` |
+| `GET  /fabric/v1/vault/streams/{ns}`        | — | summary of streams in namespace |
+| `POST /fabric/v1/vault/subscribe`           | — | SSE; polling implementation |
+| `POST /fabric/v1/history/append`            | required | hash chain validated; 409 on `previous_event_hash` mismatch |
+| `GET  /fabric/v1/history/stream/{sid}`      | — | events with `previous_event_hash` + `event_hash` |
+| `GET  /fabric/v1/history/verify/{sid}`      | — | walks chain end-to-end |
+| `GET  /fabric/v1/identity/principal`        | — | returns Grant holder's principal info |
+| `POST /fabric/v1/identity/pair/initiate`    | — | issues pairing token + QR + numeric code + magic link |
+| `POST /fabric/v1/grant/mint`                | required | mints a Grant signed with the Hub's macaroon key |
+| `POST /fabric/v1/grant/verify`              | — | hypothetical-operation check |
+| `POST /fabric/v1/grant/revoke`              | required | writes revocation event to history |
+| `GET  /fabric/v1/llm/routes`                | — | empty in Phase 2b — SDK does remote-BYOK routing |
+| `POST /fabric/v1/llm/complete`              | required | 501 — Hub does not proxy completions in v1.0 |
+| `GET  /fabric/v1/bridge/adapters`           | — | empty in Phase 2b — adapter framework lands at M5.5 |
+| `POST /fabric/v1/bridge/call`               | required | 501 until M5.5 |
+| `POST /fabric/v1/bridge/approve`            | — | 501 until M5.5 |
+| `GET  /fabric/v1/sync/peers`                | — | empty in v1.0 single-anchor |
+| `GET  /fabric/v1/sync/pull`                 | — | 501 — multi-anchor sync is Phase 2 |
+| `POST /fabric/v1/sync/push`                 | — | 501 — multi-anchor sync is Phase 2 |
+| `POST /fabric/v1/sync/conflict-ack`         | — | 501 — needs full conflict surfacing |
+
+### Reserved
+
+| Method + path | Notes |
+| --- | --- |
+| `* /fabric/v1/cluster/*` | HTTP 501 `not_implemented` (hook 4) |
+
+## Caveat enforcement
+
+Phase 2b evaluates these caveats at request time:
+
+| Caveat | Enforced |
+| --- | --- |
+| `time < <rfc3339>`, `time > <rfc3339>` | server clock |
+| `operation in [...]` | request operation |
+| `namespace == <string>` | request namespace |
+| `nondelegatable` | rejects on `/grant/mint` with a parent grant |
+| `idempotency-required` | rejects when `X-Fabric-Idempotency-Key` is absent |
+| `principal-type in [...]`, `agent-id == <ulid>`, `device-id == <ulid>` | accepted as Hub-trusted assertions (cross-checks ship with M3) |
+| `rate <= N per <window>`, `max-amount <= <int> <ccy>`, `only-domain in [...]`, `requires-human-approval`, `discharge-from <url>` | parsed but not enforced; M3 conformance wires them |
 
 ## Build
 
@@ -105,9 +149,8 @@ A TOML pass may follow in Phase 2b once Bhai confirms config-format preference.
 
 ## Roadmap
 
-- Phase 2b: history, identity (pair), grant, sync, llm, bridge endpoints; SSE for vault/subscribe; discharge macaroons; full caveat catalog
-- Phase 2c: `backup` / `restore`, service units, `status`, `conformance` stub
-- M3: full conformance suite (32 tests) in `fabric-sdk-go/conformance/`; `nakli-hub conformance` wires it
+- Phase 2c: `backup` / `restore`, service units (systemd + launchd), `status` / `conformance` stubs, M2 close-out
+- M3: full conformance suite (32 tests) in `fabric-sdk-go/conformance/`; `nakli-hub conformance` wires it. Phase 2b caveats marked "parsed but not enforced" become enforced here.
 - M9: reproducible builds, GPG signing, `curl|bash` installer
 
 ## License
