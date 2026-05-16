@@ -91,6 +91,9 @@ const (
 	ErrVersionMismatch      = "version_mismatch"
 	ErrBadRequest           = "bad_request"
 	ErrNotImplemented       = "not_implemented"
+	ErrRateLimited          = "rate_limited"
+	ErrHumanApprovalRequired = "human_approval_required"
+	ErrPrincipalRetired     = "principal_retired"
 )
 
 // Context keys used by middleware to pass per-request data to handlers.

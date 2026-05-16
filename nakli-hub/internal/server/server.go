@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
@@ -20,6 +21,20 @@ type Server struct {
 	now     func() time.Time
 	startAt time.Time
 	binVer  string
+
+	// rateBuckets tracks per-grant token buckets for the `rate` caveat.
+	rateMu      sync.Mutex
+	rateBuckets map[string]*rateBucket
+
+	// dischargeCache stores verified discharge macaroons by third-party caveat id.
+	dischargeMu    sync.Mutex
+	dischargeCache map[string]cachedDischarge
+
+	// peerURLs is the list of remote peers `/health` probes for the `degraded`
+	// flag. Real multi-peer sync lands at M7; M3 uses this only to satisfy
+	// conformance test 26.
+	peerMu   sync.Mutex
+	peerURLs []string
 }
 
 // New constructs a Server. cfg, store, and identity must be initialized.
@@ -29,13 +44,15 @@ func New(cfg *config.Config, store *storage.Store, id *hubid.Identity, logger *s
 		logger = slog.Default()
 	}
 	return &Server{
-		cfg:     cfg,
-		store:   store,
-		hubID:   id,
-		logger:  logger,
-		now:     time.Now,
-		startAt: time.Now(),
-		binVer:  binaryVersion,
+		cfg:            cfg,
+		store:          store,
+		hubID:          id,
+		logger:         logger,
+		now:            time.Now,
+		startAt:        time.Now(),
+		binVer:         binaryVersion,
+		rateBuckets:    map[string]*rateBucket{},
+		dischargeCache: map[string]cachedDischarge{},
 	}
 }
 

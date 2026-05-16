@@ -4,11 +4,37 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/grant"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
 )
+
+// missingCaveats returns the first parent caveat absent from child, or "" when
+// every parent caveat is carried forward. Caveats are compared verbatim
+// (whitespace-trimmed).
+func missingCaveats(parent, child []string) string {
+	have := make(map[string]struct{}, len(child))
+	for _, c := range child {
+		have[strings.TrimSpace(c)] = struct{}{}
+	}
+	for _, c := range parent {
+		tc := strings.TrimSpace(c)
+		if tc == "" {
+			continue
+		}
+		// The parent's `time < ...` is replaced by the child's own expiry; do
+		// not require it verbatim.
+		if strings.HasPrefix(tc, "time < ") {
+			continue
+		}
+		if _, ok := have[tc]; !ok {
+			return tc
+		}
+	}
+	return ""
+}
 
 // --- POST /fabric/v1/grant/mint ---
 
@@ -50,6 +76,53 @@ func (s *Server) handleGrantMint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g := grantFromCtx(ctx)
+	// Tests 15 / 32: when the caller supplies `parent_grant_macaroon`, the
+	// child being minted is a delegation of that specific parent — narrow its
+	// scope and never drop its first-party caveats. (When the field is empty
+	// the request is an unrestricted mint by the holder of a `grant`-scope
+	// Grant; no narrowing is required.)
+	if req.ParentGrantMacaroon != "" {
+		parentBytes, err := base64.StdEncoding.DecodeString(req.ParentGrantMacaroon)
+		if err != nil {
+			if parentBytes, err = tryBase64(req.ParentGrantMacaroon); err != nil {
+				writeError(w, r, http.StatusBadRequest, ErrBadRequest, "parent_grant_macaroon is not valid base64", false)
+				return
+			}
+		}
+		if err := grant.VerifySignature(parentBytes, s.hubID.MacaroonRootKey, grant.AlwaysSatisfied); err != nil {
+			writeError(w, r, http.StatusForbidden, ErrGrantInvalid, "parent_grant_macaroon signature invalid", false)
+			return
+		}
+		parent, err := grant.Parse(parentBytes)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, ErrBadRequest, "parent_grant_macaroon parse failed", false)
+			return
+		}
+		if parent.Identifier.Scope.Primitive != "" && string(parent.Identifier.Scope.Primitive) != req.Scope.Primitive {
+			writeError(w, r, http.StatusForbidden, ErrScopeDenied,
+				"child grant scope.primitive must equal parent's", false)
+			return
+		}
+		if parent.Identifier.Scope.Namespace != "" && parent.Identifier.Scope.Namespace != "*" && parent.Identifier.Scope.Namespace != req.Scope.Namespace {
+			writeError(w, r, http.StatusForbidden, ErrScopeDenied,
+				"child grant scope.namespace must equal parent's (or parent must be wildcard)", false)
+			return
+		}
+		if len(parent.Identifier.Scope.Operations) > 0 {
+			for _, op := range req.Scope.Operations {
+				if !contains(parent.Identifier.Scope.Operations, op) {
+					writeError(w, r, http.StatusForbidden, ErrScopeDenied,
+						"child grant scope.operations must be a subset of parent's", false)
+					return
+				}
+			}
+		}
+		if missing := missingCaveats(parent.Caveats, req.Caveats); missing != "" {
+			writeError(w, r, http.StatusForbidden, ErrScopeDenied,
+				"child grant must carry every caveat from parent; missing: "+missing, false)
+			return
+		}
+	}
 	now := s.now()
 	expiresAt := now.Add(30 * 24 * time.Hour)
 	if req.ExpiresAt != nil {
@@ -243,4 +316,66 @@ func (s *Server) handleGrantRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.store.MarkGrantRevoked(ctx, req.GrantID, res.EventID)
 	writeSuccess(w, r, http.StatusOK, grantRevokeResp{RevocationEventID: res.EventID}, FreshnessNow(s.now()))
+}
+
+// --- POST /fabric/v1/grant/discharge ---
+
+type grantDischargeReq struct {
+	// GrantID is the macaroon whose `discharge-from` caveat needs a discharge.
+	GrantID string `json:"grant_id"`
+	// VerifierURL is the value of the `discharge-from <url>` caveat — used
+	// as both the discharge's id (so checkDischargeFrom can match) and its
+	// embedded location.
+	VerifierURL string `json:"verifier_url"`
+}
+
+type grantDischargeResp struct {
+	Discharge string `json:"discharge"` // base64
+	ExpiresAt string `json:"expires_at"`
+}
+
+// handleGrantDischarge mints a fresh discharge macaroon for the named
+// verifier, provided the referenced Grant has not been revoked. The discharge
+// is itself a macaroon signed with the Hub's root key carrying a 24h time
+// caveat. Test 16 of the conformance suite drives this flow.
+func (s *Server) handleGrantDischarge(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req grantDischargeReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "request body is not valid JSON", false)
+		return
+	}
+	if req.GrantID == "" || req.VerifierURL == "" {
+		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "grant_id and verifier_url are required", false)
+		return
+	}
+	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "grant", Operation: "discharge"}); err != nil {
+		return
+	}
+	// Refuse to mint a discharge for a revoked Grant.
+	if revoked, _ := s.store.IsGrantRevoked(ctx, req.GrantID); revoked {
+		writeError(w, r, http.StatusForbidden, ErrGrantRevoked,
+			"Grant has been revoked; no fresh discharge will be issued", false)
+		return
+	}
+	expires := s.now().Add(24 * time.Hour)
+	id := grant.Identifier{
+		GrantID:  req.VerifierURL,
+		IssuedAt: s.now(),
+	}
+	out, err := grant.Mint(grant.MintSpec{
+		RootKey:    s.hubID.MacaroonRootKey,
+		Location:   req.VerifierURL,
+		Identifier: id,
+		Caveats:    []string{"time < " + expires.UTC().Format(time.RFC3339Nano)},
+	})
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, ErrUnavailable, "discharge mint failed", true)
+		return
+	}
+	s.dischargeRemember(req.VerifierURL, out.Macaroon, 24*time.Hour)
+	writeSuccess(w, r, http.StatusOK, grantDischargeResp{
+		Discharge: base64.StdEncoding.EncodeToString(out.Macaroon),
+		ExpiresAt: expires.UTC().Format(time.RFC3339Nano),
+	}, FreshnessNow(s.now()))
 }

@@ -14,6 +14,13 @@ type scopeRequirement struct {
 	// IsDelegation is true on /grant/mint when a parent grant is present;
 	// drives the nondelegatable caveat enforcement.
 	IsDelegation bool
+	// Bridge-only fields populated by the bridge handler when it needs the
+	// bridge-specific caveats (`max-amount`, `only-domain`,
+	// `requires-human-approval`) evaluated.
+	IsBridgeCall   bool
+	BridgeDomain   string
+	BridgeAmount   int64
+	BridgeCurrency string
 }
 
 // checkAuth performs scope + caveat enforcement against the parsed Grant on
@@ -44,18 +51,37 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, req scopeRequ
 	}
 
 	cctx := CaveatContext{
-		Now:                 s.now(),
-		Operation:           req.Operation,
-		Namespace:           req.Namespace,
-		Primitive:           req.Primitive,
-		HasIdempotencyKey:   IdempotencyKey(r.Context()) != "",
-		IsDelegationRequest: req.IsDelegation,
+		Now:                    s.now(),
+		Operation:              req.Operation,
+		Namespace:              req.Namespace,
+		Primitive:              req.Primitive,
+		HasIdempotencyKey:      IdempotencyKey(r.Context()) != "",
+		IsDelegationRequest:    req.IsDelegation,
+		GrantID:                g.Identifier.GrantID,
+		RequesterPrincipalType: requesterPrincipalType(r),
+		RequesterAgentID:       requesterAgentID(r),
+		RequesterDeviceID:      requesterDeviceID(r),
+		IsBridgeCall:           req.IsBridgeCall,
+		BridgeDomain:           req.BridgeDomain,
+		BridgeAmount:           req.BridgeAmount,
+		BridgeCurrency:         req.BridgeCurrency,
+		Server:                 s,
+		DischargeIDs:           dischargeIDsFromCtx(r.Context()),
 	}
 	if err := EvaluateCaveats(g.Caveats, cctx); err != nil {
 		var ce *CaveatError
 		if errors.As(err, &ce) {
-			writeError(w, r, http.StatusForbidden, ErrCaveatUnmet, ce.Error(), false)
-			return errAuthShortCircuited
+			switch ce.Kind {
+			case KindRateLimited:
+				writeError(w, r, http.StatusTooManyRequests, ErrRateLimited, ce.Error(), true)
+				return errAuthShortCircuited
+			case KindHumanApproval:
+				// Caller (bridge handler) handles the 202 + pending_id flow.
+				return errHumanApprovalRequired
+			default:
+				writeError(w, r, http.StatusForbidden, ErrCaveatUnmet, ce.Error(), false)
+				return errAuthShortCircuited
+			}
 		}
 		writeError(w, r, http.StatusForbidden, ErrCaveatUnmet, err.Error(), false)
 		return errAuthShortCircuited
@@ -66,6 +92,10 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, req scopeRequ
 // errAuthShortCircuited is a sentinel; handlers use it to detect that checkAuth
 // already wrote the response.
 var errAuthShortCircuited = errors.New("server: auth check short-circuited")
+
+// errHumanApprovalRequired signals that the bridge handler should respond 202
+// + create a pending_bridge row rather than treat the caveat as a hard reject.
+var errHumanApprovalRequired = errors.New("server: human approval required")
 
 func contains(haystack []string, needle string) bool {
 	for _, s := range haystack {
@@ -101,6 +131,18 @@ func stripFabricSuffix(id string) string {
 		}
 	}
 	return id
+}
+
+func requesterPrincipalType(r *http.Request) string {
+	return r.Header.Get("X-Fabric-Principal-Type")
+}
+
+func requesterAgentID(r *http.Request) string {
+	return r.Header.Get("X-Fabric-Agent-Id")
+}
+
+func requesterDeviceID(r *http.Request) string {
+	return r.Header.Get("X-Fabric-Device-Id")
 }
 
 // _ is referenced from middleware.go in places where it makes the intent of

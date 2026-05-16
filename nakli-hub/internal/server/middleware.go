@@ -82,8 +82,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // authMiddleware verifies the X-Fabric-Grant macaroon against the Hub's root
-// HMAC key. Caveats are NOT evaluated here in Phase 2a; the full caveat catalog
-// is wired up in Phase 2b alongside the rate-limit/discharge logic.
+// HMAC key, parses any X-Fabric-Discharge headers, checks the bearer-principal
+// against the retired-principal list, and surfaces the parsed Grant + the set
+// of supplied discharge ids on the request context.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := r.Header.Get("X-Fabric-Grant")
@@ -106,14 +107,33 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeError(w, r, http.StatusUnauthorized, ErrGrantInvalid, "macaroon parse failed", false)
 			return
 		}
+		// Refuse Grants that have been revoked.
+		if revoked, _ := s.store.IsGrantRevoked(r.Context(), g.Identifier.GrantID); revoked {
+			writeError(w, r, http.StatusUnauthorized, ErrGrantRevoked, "Grant has been revoked", false)
+			return
+		}
+		// Test 30: refuse Grants whose bearer agent has been retired. The
+		// requester asserts their agent-id via X-Fabric-Agent-Id; if the
+		// principals row marks that agent retired, reject.
+		if agentID := requesterAgentID(r); agentID != "" {
+			if p, err := s.store.GetPrincipal(r.Context(), agentID); err == nil && p.RetiredAt != nil {
+				writeError(w, r, http.StatusUnauthorized, ErrPrincipalRetired,
+					"agent principal is retired", false)
+				return
+			}
+		}
+		// Parse and verify discharge macaroons supplied by the caller.
+		dischargeIDs, derr := s.parseDischarges(r)
+		if derr != nil {
+			writeError(w, r, http.StatusUnauthorized, ErrGrantInvalid, derr.Error(), false)
+			return
+		}
 		ctx := r.Context()
 		ctx = context.WithValue(ctx, ctxKeyGrantID, g.Identifier.GrantID)
 		ctx = context.WithValue(ctx, ctxKeyPrincipal, g.Identifier.IssuedByPrincipal)
 		ctx = context.WithValue(ctx, ctxKeyGrantBytes, macBytes)
-		// Stash the parsed Grant on the request context too, so per-handler
-		// scope checks can access scope.primitive / namespace / operations
-		// without re-parsing.
 		ctx = context.WithValue(ctx, ctxKeyGrantParsed{}, g)
+		ctx = context.WithValue(ctx, ctxKeyDischargeIDs{}, dischargeIDs)
 		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
@@ -122,10 +142,71 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // ctxKeyGrantParsed is a typed key (avoids collisions across packages).
 type ctxKeyGrantParsed struct{}
 
+// ctxKeyDischargeIDs is the context key for the set of verifier-ids whose
+// discharge macaroons the caller successfully attached.
+type ctxKeyDischargeIDs struct{}
+
 // grantFromCtx returns the parsed Grant attached by authMiddleware.
 func grantFromCtx(ctx context.Context) *grant.Grant {
 	g, _ := ctx.Value(ctxKeyGrantParsed{}).(*grant.Grant)
 	return g
+}
+
+// dischargeIDsFromCtx returns the set of discharge ids the caller supplied.
+// Non-nil even when no discharges were attached, to simplify caller logic.
+func dischargeIDsFromCtx(ctx context.Context) map[string]struct{} {
+	m, _ := ctx.Value(ctxKeyDischargeIDs{}).(map[string]struct{})
+	if m == nil {
+		return map[string]struct{}{}
+	}
+	return m
+}
+
+// parseDischarges reads X-Fabric-Discharge (comma-separated base64 macaroons),
+// verifies each against the Hub's macaroon root key, and returns the set of
+// discharge ids (each id is the verifier URL embedded in the macaroon).
+func (s *Server) parseDischarges(r *http.Request) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	raw := r.Header.Get("X-Fabric-Discharge")
+	if raw == "" {
+		return out, nil
+	}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		mac, err := decodeMacaroonHeader(part)
+		if err != nil {
+			return nil, err
+		}
+		// Verify the discharge's signature + time caveat using AlwaysSatisfied
+		// for everything except `time <`, which we evaluate manually so an
+		// expired discharge is rejected here rather than at handler time.
+		check := func(c string) error {
+			c = strings.TrimSpace(c)
+			if strings.HasPrefix(c, "time < ") {
+				return checkTimeBefore(c[len("time < "):], s.now())
+			}
+			return nil
+		}
+		if err := grant.VerifySignature(mac, s.hubID.MacaroonRootKey, check); err != nil {
+			return nil, err
+		}
+		parsed, err := grant.Parse(mac)
+		if err != nil {
+			return nil, err
+		}
+		// Discharge macaroons carry their verifier URL as the parsed id.
+		// The grant.Parse path treats the id as a JSON-marshalled Identifier;
+		// for discharges we mint with a synthetic Identifier whose GrantID is
+		// the verifier URL.
+		out[parsed.Identifier.GrantID] = struct{}{}
+		// Also remember in the cache so the next request without the discharge
+		// header can still pass within the staleness budget (24h default).
+		s.dischargeRemember(parsed.Identifier.GrantID, mac, 24*time.Hour)
+	}
+	return out, nil
 }
 
 // idempotencyMiddleware implements the idempotency flow from hub-spec

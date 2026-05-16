@@ -52,6 +52,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 		s.authMiddleware(http.HandlerFunc(s.handleGrantVerify)))
 	mux.Handle("POST /fabric/v1/grant/revoke",
 		s.authMiddleware(s.idempotencyMiddleware("grant/revoke", http.HandlerFunc(s.handleGrantRevoke))))
+	mux.Handle("POST /fabric/v1/grant/discharge",
+		s.authMiddleware(http.HandlerFunc(s.handleGrantDischarge)))
 
 	// LLM (Phase 2 surface; minimal v1.0 routing).
 	mux.Handle("GET /fabric/v1/llm/routes",
@@ -66,6 +68,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 		s.authMiddleware(s.idempotencyMiddleware("bridge/call", http.HandlerFunc(s.handleBridgeCall))))
 	mux.Handle("POST /fabric/v1/bridge/approve",
 		s.authMiddleware(http.HandlerFunc(s.handleBridgeApprove)))
+	mux.Handle("GET /fabric/v1/bridge/pending/{id}",
+		s.authMiddleware(http.HandlerFunc(s.handleBridgePending)))
 
 	// Sync (Phase 2 multi-anchor).
 	mux.Handle("GET /fabric/v1/sync/peers",
@@ -114,14 +118,26 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	var eventCount int64
 	_ = s.store.DB().QueryRowContext(ctx, `SELECT COUNT(1) FROM events`).Scan(&eventCount)
 
+	reachable, unreachable := s.peerReachability(ctx)
+	degraded := len(unreachable) > 0
+	reasons := []string{}
+	peerHealth := []map[string]any{}
+	for _, u := range reachable {
+		peerHealth = append(peerHealth, map[string]any{"peer": u, "reachable": true})
+	}
+	for _, u := range unreachable {
+		peerHealth = append(peerHealth, map[string]any{"peer": u, "reachable": false})
+		reasons = append(reasons, "peer unreachable: "+u)
+	}
+
 	data := healthData{
 		TransportID:     s.hubID.HubID,
 		Version:         ProtocolVersion,
 		BinaryVersion:   s.binVer,
 		UptimeSeconds:   int64(s.now().Sub(s.startAt).Seconds()),
-		Degraded:        false,
-		DegradedReasons: []string{},
-		PeerHealth:      []map[string]any{},
+		Degraded:        degraded,
+		DegradedReasons: reasons,
+		PeerHealth:      peerHealth,
 		EventCount:      eventCount,
 		PrincipalsCount: counts,
 	}

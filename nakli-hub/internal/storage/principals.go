@@ -91,6 +91,27 @@ func stripFabricSuffix(id string) string {
 	return id
 }
 
+// RetirePrincipal marks the principal as retired. The retirement_event_id is
+// the History event that recorded the retirement (caller-supplied; usually a
+// `principal.retired` event). Idempotent: re-retiring a retired principal is
+// a no-op.
+func (s *Store) RetirePrincipal(ctx context.Context, principalID, retirementEventID string) error {
+	if principalID == "" {
+		return errors.New("RetirePrincipal: principalID is empty")
+	}
+	id := stripFabricSuffix(principalID)
+	_, err := s.db.ExecContext(ctx, `
+        UPDATE principals
+        SET retired_at = ?, retirement_event_id = ?
+        WHERE principal_id = ? AND retired_at IS NULL`,
+		s.nowRFC3339(), retirementEventID, id,
+	)
+	if err != nil {
+		return fmt.Errorf("RetirePrincipal: %w", err)
+	}
+	return nil
+}
+
 // PrincipalCounts returns counts grouped by principal_type. Used by /health.
 func (s *Store) PrincipalCounts(ctx context.Context) (map[string]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `

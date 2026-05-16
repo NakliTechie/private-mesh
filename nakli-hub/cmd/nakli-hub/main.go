@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,9 +18,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/conformance"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/backup"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/hubid"
@@ -147,11 +151,31 @@ func runInit(args []string) int {
 
 // --- serve ---
 
+// stringSliceFlag collects a `-flag value` flag that may be repeated.
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string {
+	if s == nil {
+		return ""
+	}
+	out := ""
+	for i, v := range *s {
+		if i > 0 {
+			out += ","
+		}
+		out += v
+	}
+	return out
+}
+func (s *stringSliceFlag) Set(v string) error { *s = append(*s, v); return nil }
+
 func runServe(args []string) int {
 	fs := flag.NewFlagSet("nakli-hub serve", flag.ContinueOnError)
 	configPath := fs.String("config", "", "path to config.json")
 	dataDirFlag := fs.String("data-dir", "", "override hub.data_dir from config")
 	listenFlag := fs.String("listen", "", "override hub.listen from config")
+	var peerURLs stringSliceFlag
+	fs.Var(&peerURLs, "peer-url", "peer URL the Hub will probe for /health.degraded (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -200,6 +224,10 @@ func runServe(args []string) int {
 	defer store.Close()
 
 	srv := server.New(cfg, store, id, logger, BinaryVersion)
+	if len(peerURLs) > 0 {
+		srv.SetPeerProbeURLs(peerURLs)
+		logger.Info("peer-probe configured", "urls", strings.Join(peerURLs, ","))
+	}
 	httpSrv := &http.Server{
 		Addr:              cfg.Hub.Listen,
 		Handler:           srv.Handler(),
@@ -371,17 +399,73 @@ func prettyJSON(in []byte) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
 }
 
-// --- conformance (stub) ---
+// --- conformance ---
 
+// runConformance runs the 32-test suite from fabric-sdk-go/conformance against
+// a running transport. The Hub must be running and reachable at --target. The
+// command opens the Hub's local SQLite (via --data-dir) to read the macaroon
+// root key and to populate the retired-principal row test 30 expects.
+//
+// For test 26 (`degraded:true`) the Hub must have been started with
+// `--peer-url <unreachable>`; see scripts/test-conformance.sh.
 func runConformance(args []string) int {
 	fs := flag.NewFlagSet("nakli-hub conformance", flag.ContinueOnError)
 	target := fs.String("target", "http://127.0.0.1:7842", "transport URL to test")
+	dataDir := fs.String("data-dir", "./hub-data", "Hub data dir (for hub-identity.json and SQLite)")
+	asJSON := fs.Bool("json", false, "emit results as JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	// Load the Hub identity from disk to get the macaroon root key.
+	idPath := filepath.Join(*dataDir, "hub-identity.json")
+	id, err := hubid.Load(idPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "nakli-hub conformance: load identity:", err)
+		return 1
+	}
+	// Open SQLite to set up the retired principal test 30 expects.
+	cfg := config.Default()
+	cfg.Hub.DataDir = *dataDir
+	if err := cfg.NormalizeDataDir(); err != nil {
+		fmt.Fprintln(os.Stderr, "nakli-hub conformance:", err)
+		return 1
+	}
+	store, err := storage.Open(cfg.SQLitePath(), cfg.BlobsPath())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "nakli-hub conformance: storage.Open:", err)
+		return 1
+	}
+	defer store.Close()
+	prep := conformance.DefaultPrep()
+	pub, _, _ := ed25519.GenerateKey(cryptorand.Reader)
+	if err := store.UpsertPrincipal(context.Background(), storage.Principal{
+		PrincipalID:   prep.RetiredAgentID,
+		PrincipalType: "agent",
+		PublicKey:     pub,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "nakli-hub conformance: seed retired principal:", err)
+		return 1
+	}
+	if err := store.RetirePrincipal(context.Background(), prep.RetiredAgentID, "conformance-setup"); err != nil {
+		fmt.Fprintln(os.Stderr, "nakli-hub conformance: retire principal:", err)
+		return 1
+	}
+
 	fmt.Printf("nakli-hub conformance: target=%s\n", *target)
-	fmt.Println("Not yet implemented. The 32-test suite lands at M3, under fabric-sdk-go/conformance/.")
-	fmt.Println("At M3 this command will: run all 32 conformance tests and exit non-zero on any failure.")
+	results := conformance.RunAll(conformance.Config{
+		Target:          *target,
+		MacaroonRootKey: id.MacaroonRootKey,
+		Verbose:         !*asJSON,
+	})
+	if *asJSON {
+		results.PrintJSON(os.Stdout)
+	} else {
+		results.PrintTable(os.Stdout)
+	}
+	if !results.AllPassed() {
+		return 1
+	}
 	return 0
 }
 
