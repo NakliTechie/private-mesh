@@ -1,0 +1,2590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NakliTechie Private Mesh — Vision &amp; Decisions v0.7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #1a1814;
+  --paper: #f6f1e7;
+  --paper-soft: #fbf7ec;
+  --rule: rgba(42, 37, 32, 0.15);
+  --rule-strong: rgba(42, 37, 32, 0.35);
+  --mute: #6b6358;
+  --mute-soft: #8a8275;
+  --accent: #8b2a0e;
+  --accent-soft: #c4633a;
+  --highlight: #f5d76e;
+  --locked: #2d5a2d;
+  --revised: #8b6914;
+  --deferred: #5a4a3a;
+  --open: #8b2a0e;
+  --principle: #8b2a0e;
+  --diagram-bg: #fbf7ec;
+  --serif: 'Fraunces', Georgia, serif;
+  --sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+[data-theme="dark"] {
+  --ink: #ede5d3;
+  --paper: #14110d;
+  --paper-soft: #1c1813;
+  --rule: rgba(237, 229, 211, 0.15);
+  --rule-strong: rgba(237, 229, 211, 0.3);
+  --mute: #8a8275;
+  --mute-soft: #6b6358;
+  --accent: #e89668;
+  --accent-soft: #f5b793;
+  --highlight: #6b5520;
+  --locked: #6dbd6d;
+  --revised: #d4a83e;
+  --deferred: #a89682;
+  --open: #e89668;
+  --principle: #e89668;
+  --diagram-bg: #1c1813;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-feature-settings: "ss01", "ss02", "kern";
+  font-variant-numeric: oldstyle-nums proportional-nums;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+body {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+}
+
+/* ============ Sidebar ============ */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 2rem 1.25rem 5rem 1.5rem;
+  border-right: 1px solid var(--rule);
+  background: var(--paper);
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  scrollbar-width: thin;
+}
+
+.brand {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.1rem;
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.brand em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.brand-sub {
+  font-family: var(--sans);
+  font-size: 0.65rem;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 1.5rem;
+}
+
+.search-wrap {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.search {
+  width: 100%;
+  padding: 0.55rem 0.7rem 0.55rem 2rem;
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  font-family: var(--sans);
+  font-size: 0.825rem;
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+}
+.search:focus { outline: none; border-color: var(--accent); }
+.search::placeholder { color: var(--mute); }
+
+.search-icon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--mute);
+  pointer-events: none;
+}
+
+.nav-section { margin-bottom: 1.25rem; }
+
+.nav-title {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 0.5rem;
+}
+
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-item {
+  padding: 0.28rem 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  transition: color 0.1s ease;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.nav-item:hover { color: var(--accent); }
+.nav-item.active { color: var(--accent); font-weight: 500; }
+
+.nav-item .id {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--mute);
+  flex-shrink: 0;
+  min-width: 2.3rem;
+}
+
+.nav-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 0.4rem;
+}
+
+.dot.locked { background: var(--locked); }
+.dot.revised { background: var(--revised); }
+.dot.deferred { background: var(--deferred); }
+.dot.open { background: var(--open); }
+.dot.principle { background: var(--principle); }
+
+.theme-toggle {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  z-index: 100;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============ Main content ============ */
+.main {
+  padding: 4rem 5rem 8rem;
+  max-width: 920px;
+}
+
+/* Title page */
+.preamble {
+  margin-bottom: 4rem;
+  padding-bottom: 3rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1rem;
+}
+
+h1.doc-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 3.6rem;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin: 0 0 1.5rem;
+  font-variation-settings: "opsz" 144;
+}
+
+h1.doc-title em {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--accent);
+}
+
+.lede {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1.55;
+  color: var(--ink);
+  max-width: 38em;
+  font-weight: 300;
+  font-style: italic;
+}
+
+.meta {
+  display: flex;
+  gap: 2rem;
+  margin-top: 2rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--mute);
+  flex-wrap: wrap;
+}
+
+.meta-item span {
+  display: block;
+  color: var(--ink);
+  font-weight: 500;
+  margin-top: 0.2rem;
+}
+
+.legend {
+  display: flex;
+  gap: 1.4rem;
+  margin: 2rem 0 0;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--sans);
+  font-size: 0.74rem;
+  color: var(--mute);
+}
+
+.legend-item .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ============ Section heads ============ */
+.section-head {
+  margin-top: 5rem;
+  margin-bottom: 2.5rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid var(--rule);
+  scroll-margin-top: 2rem;
+}
+.section-head:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.section-eyebrow {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 0.7rem;
+}
+
+h2.section-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 2.4rem;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.9rem;
+  font-variation-settings: "opsz" 120;
+}
+
+h2.section-title em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.section-intro {
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 36em;
+  font-weight: 300;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* ============ Body prose ============ */
+.prose {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  color: var(--ink);
+  max-width: 38em;
+  margin-bottom: 2rem;
+  scroll-margin-top: 2rem;
+}
+
+.prose p { margin: 0 0 1.1rem; }
+.prose p:last-child { margin-bottom: 0; }
+
+.prose h3 {
+  font-family: var(--serif);
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  margin: 2.5rem 0 0.9rem;
+  font-variation-settings: "opsz" 80;
+}
+
+.prose h4 {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  margin: 1.8rem 0 0.6rem;
+}
+
+.prose ul, .prose ol {
+  margin: 0.5rem 0 1.2rem;
+  padding-left: 1.5rem;
+}
+
+.prose li { margin: 0.35rem 0; }
+
+.prose strong { font-weight: 600; color: var(--ink); }
+.prose em { font-style: italic; }
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--rule);
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Pull quote / callout */
+.pullquote {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  line-height: 1.35;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--accent);
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0 0.5rem 1.5rem;
+  margin: 2.5rem 0;
+  max-width: 32em;
+}
+
+.callout {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--accent-soft);
+  background: rgba(196, 99, 58, 0.06);
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 38em;
+}
+
+[data-theme="dark"] .callout {
+  background: rgba(245, 183, 147, 0.06);
+}
+
+.callout-label {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+
+/* ============ Principles ============ */
+.principles-list {
+  list-style: none;
+  counter-reset: principle;
+  padding: 0;
+  margin: 1.5rem 0 0;
+}
+
+.principles-list li {
+  counter-increment: principle;
+  position: relative;
+  padding: 1.5rem 0 1.5rem 4rem;
+  border-bottom: 1px solid var(--rule);
+  max-width: 40em;
+}
+.principles-list li:last-child { border-bottom: none; }
+
+.principles-list li::before {
+  content: counter(principle, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 1.75rem;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.principles-list h4 {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.55rem;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.principles-list p {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.65;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* ============ Decision cards ============ */
+.decision {
+  margin: 0 0 3.5rem;
+  padding-bottom: 3.5rem;
+  border-bottom: 1px solid var(--rule);
+  scroll-margin-top: 2rem;
+  max-width: 40em;
+}
+
+.decision:last-child {
+  border-bottom: none;
+}
+
+.decision.hidden { display: none; }
+
+.decision-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.decision-id {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--mute);
+  letter-spacing: 0.05em;
+}
+
+.decision-status {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.55rem;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.status-locked { background: var(--locked); color: var(--paper); }
+.status-revised { background: var(--revised); color: var(--paper); }
+.status-deferred { background: var(--deferred); color: var(--paper); }
+.status-open { background: var(--open); color: var(--paper); }
+
+.decision-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+  font-variation-settings: "opsz" 80;
+}
+
+.decision-resolution {
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
+  max-width: 36em;
+}
+
+.section-label {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin: 1.6rem 0 0.55rem;
+}
+
+.decision-body {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.decision-body p { margin: 0 0 1rem; }
+.decision-body ul, .decision-body ol { margin: 0.4rem 0 1rem; padding-left: 1.4rem; }
+.decision-body li { margin: 0.3rem 0; }
+.decision-body strong { font-weight: 600; }
+.decision-body code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--rule);
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+}
+
+/* ============ Diagrams ============ */
+.diagram-frame {
+  background: var(--diagram-bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 2rem 1.5rem;
+  margin: 2rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.diagram-frame svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-caption {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--mute);
+  text-align: center;
+  margin-top: 1rem;
+  font-style: italic;
+  letter-spacing: 0.01em;
+}
+
+/* SVG text classes used in diagrams */
+.svg-title {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 13px;
+  fill: var(--ink);
+}
+.svg-subtitle {
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 11px;
+  fill: var(--mute);
+}
+.svg-label {
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 11px;
+  fill: var(--ink);
+}
+
+/* ============ Interactive bits ============ */
+.toc-mini {
+  background: var(--paper-soft);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin: 2rem 0;
+  max-width: 36em;
+}
+
+.toc-mini-title {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 0.7rem;
+}
+
+.toc-mini ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  columns: 2;
+  column-gap: 1.5rem;
+}
+
+.toc-mini li {
+  padding: 0.2rem 0;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}
+
+.toc-mini a {
+  color: var(--ink);
+  text-decoration: none;
+  transition: color 0.1s;
+}
+
+.toc-mini a:hover {
+  color: var(--accent);
+}
+
+/* History table */
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  margin-top: 1rem;
+  max-width: 38em;
+}
+
+.history-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.55rem 0.7rem 0.55rem 0;
+}
+
+.history-table td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.65rem 0.7rem 0.65rem 0;
+  vertical-align: top;
+}
+
+.history-table tr:last-child td { border-bottom: none; }
+
+/* ============ Footer ============ */
+.footer {
+  margin-top: 5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--mute);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  max-width: 40em;
+}
+
+.footer em {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink);
+}
+
+/* Search highlight */
+mark {
+  background: var(--highlight);
+  color: var(--ink);
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+
+[data-theme="dark"] mark {
+  background: var(--highlight);
+  color: var(--paper);
+}
+
+.no-results {
+  text-align: center;
+  padding: 4rem 0;
+  color: var(--mute);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.1rem;
+  display: none;
+}
+
+.no-results.show { display: block; }
+
+/* Mobile */
+@media (max-width: 900px) {
+  body { grid-template-columns: 1fr; }
+  .sidebar {
+    position: relative;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+  }
+  .main { padding: 2rem 1.5rem 4rem; }
+  h1.doc-title { font-size: 2.3rem; }
+  h2.section-title { font-size: 1.8rem; }
+  .decision-title { font-size: 1.4rem; }
+  .toc-mini ul { columns: 1; }
+}
+</style>
+</head>
+<body data-theme="light">
+
+<aside class="sidebar">
+  <div class="brand">NakliTechie <em>Private Mesh</em></div>
+  <div class="brand-sub">v0.7 · Vision &amp; Decisions</div>
+
+  <div class="search-wrap">
+    <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" class="search" id="search" placeholder="Search everything…" autofocus>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Vision</div>
+    <ul class="nav-list">
+      <li class="nav-item" data-anchor="thesis"><span class="id">·</span><span>The thesis</span></li>
+      <li class="nav-item" data-anchor="failure-model"><span class="id">·</span><span>Failure model</span></li>
+      <li class="nav-item" data-anchor="architecture"><span class="id">·</span><span>Architecture</span></li>
+      <li class="nav-item" data-anchor="why"><span class="id">·</span><span>Why this exists</span></li>
+      <li class="nav-item" data-anchor="audience"><span class="id">·</span><span>Audience</span></li>
+      <li class="nav-item" data-anchor="agents"><span class="id">·</span><span>Agents as principals</span></li>
+      <li class="nav-item" data-anchor="primitives"><span class="id">·</span><span>Seven primitives</span></li>
+      <li class="nav-item" data-anchor="transport"><span class="id">·</span><span>Transport plane</span></li>
+      <li class="nav-item" data-anchor="network"><span class="id">·</span><span>Network plane</span></li>
+      <li class="nav-item" data-anchor="hardware"><span class="id">·</span><span>The anchor</span></li>
+      <li class="nav-item" data-anchor="gleam"><span class="id">·</span><span>Gleam</span></li>
+      <li class="nav-item" data-anchor="tools"><span class="id">·</span><span>Tools layer</span></li>
+      <li class="nav-item" data-anchor="pairing"><span class="id">·</span><span>Pairing UX</span></li>
+      <li class="nav-item" data-anchor="scope"><span class="id">·</span><span>Scope</span></li>
+      <li class="nav-item" data-anchor="roadmap"><span class="id">·</span><span>Roadmap</span></li>
+      <li class="nav-item" data-anchor="risks"><span class="id">·</span><span>Risks</span></li>
+      <li class="nav-item" data-anchor="success"><span class="id">·</span><span>Success</span></li>
+    </ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Principles</div>
+    <ul class="nav-list">
+      <li class="nav-item" data-anchor="principles"><span class="dot principle"></span><span class="id">P</span><span>Ten principles</span></li>
+      <li class="nav-item" data-anchor="non-negotiables"><span class="dot principle"></span><span class="id">N</span><span>Non-negotiables</span></li>
+    </ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Decisions — Foundational</div>
+    <ul class="nav-list" id="nav-foundational"></ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Capability layer</div>
+    <ul class="nav-list" id="nav-capability"></ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Transport &amp; network</div>
+    <ul class="nav-list" id="nav-transport"></ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Deployment &amp; runtime</div>
+    <ul class="nav-list" id="nav-deployment"></ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Open</div>
+    <ul class="nav-list" id="nav-open"></ul>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-title">Reference</div>
+    <ul class="nav-list">
+      <li class="nav-item" data-anchor="history"><span class="id">H</span><span>Decision history</span></li>
+    </ul>
+  </div>
+</aside>
+
+<main class="main">
+
+  <header class="preamble">
+    <div class="eyebrow">Vision &amp; Decisions · v0.7</div>
+    <h1 class="doc-title">NakliTechie <em>Private Mesh</em></h1>
+    <p class="lede">A capability fabric, transport plane, mesh layer, and software stack for sovereign personal and small-group computing. A mesh of devices, people, agents, and compute that belongs to one user or one trusted group — not to a vendor. Designed for continuous, asynchronous, partial failure as the operating condition, and for an arriving reality where agents do most of the using.</p>
+
+    <div class="meta">
+      <div class="meta-item">Document<span>private-mesh-v0.7</span></div>
+      <div class="meta-item">Status<span>Vision draft, agent-era pass</span></div>
+      <div class="meta-item">Audience<span>Bhai + collaborators</span></div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="dot locked"></span> Locked</div>
+      <div class="legend-item"><span class="dot revised"></span> Revised</div>
+      <div class="legend-item"><span class="dot deferred"></span> Deferred</div>
+      <div class="legend-item"><span class="dot open"></span> Open</div>
+      <div class="legend-item"><span class="dot principle"></span> Principle</div>
+    </div>
+
+    <div class="toc-mini">
+      <div class="toc-mini-title">In this document</div>
+      <ul>
+        <li><a href="#thesis">The thesis</a></li>
+        <li><a href="#failure-model">Failure model</a></li>
+        <li><a href="#architecture">Layered architecture</a></li>
+        <li><a href="#why">Why this exists</a></li>
+        <li><a href="#audience">Audience</a></li>
+        <li><a href="#agents">Agents as principals</a></li>
+        <li><a href="#primitives">Seven primitives</a></li>
+        <li><a href="#transport">Transport plane</a></li>
+        <li><a href="#network">Network plane</a></li>
+        <li><a href="#hardware">The anchor</a></li>
+        <li><a href="#gleam">Gleam</a></li>
+        <li><a href="#tools">Tools layer</a></li>
+        <li><a href="#pairing">Pairing UX</a></li>
+        <li><a href="#scope">Scope</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#principles">Guiding principles</a></li>
+        <li><a href="#non-negotiables">Non-negotiables</a></li>
+        <li><a href="#decisions">Decisions log</a></li>
+        <li><a href="#history">Decision history</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <!-- ============================================ -->
+  <!-- VISION SECTIONS                              -->
+  <!-- ============================================ -->
+
+  <div id="content">
+    <!-- ================ THESIS ================ -->
+<section class="section-head" id="thesis">
+  <div class="section-eyebrow">Part One · The Vision</div>
+  <h2 class="section-title">The <em>thesis</em></h2>
+  <p class="section-intro">Every serious computing setup will have always-on compute anchors. Like routers and modems today. The software stack to make this usable doesn't exist yet.</p>
+</section>
+
+<div class="prose">
+  <p>In the next few years, every serious computing setup — at home, at work, at small businesses, across distributed teams — will have always-on compute appliances anchoring it. Like routers and modems today. Like electrical boxes. Install and forget. Powerful enough to run real AI inference locally without sending a single byte to OpenAI, Anthropic, Google, or anyone else.</p>
+
+  <p>Apple Silicon clusters, Framework desktops with Strix Halo, NVIDIA DGX Spark successors, AMD Ryzen AI Max boxes. The hardware is here; the software stack to make it usable for normal people, small teams, and small organizations isn't.</p>
+
+  <p>A <strong>private mesh</strong> is the architecture: a mesh of devices, people, and compute that belongs to one user or one trusted group, not to a vendor. The mesh can span a single home, a single office, multiple offices linked by VPN, a family across multiple houses, a small business with a few locations, a co-working space, or a distributed small team. The unit is "the people and devices that share trust," not "the building they're in."</p>
+
+  <p>Within a private mesh, an always-on compute <strong>anchor</strong> — typically a Mac mini at home, a workstation in an office, or a small Apple Silicon cluster somewhere — serves as the most-available peer. It runs inference. It holds the durable data. It brokers access. But it isn't the center; it's a peer, just the most reliably reachable one. Phones, laptops, tablets, friends-and-family devices, colleagues' devices all orbit around it as peers, syncing data, sharing capabilities, running locally-routed inference. When the anchor is down, the mesh degrades to peer-to-peer mode — devices on the same network still talk to each other, work still gets done, life continues.</p>
+
+  <p>The NakliTechie Private Mesh is the software layer that makes this work — end to end. Browser-native tools at the top. Capability-based data fabric in the middle. A self-hostable Hub binary on the anchor. A sovereign network mesh (NetBird-wrapped) for routing between sites. Observability across the fleet. All open, all owned by the user or the group, no accounts on any third party that isn't pure infrastructure.</p>
+</div>
+
+<div class="pullquote">
+  This is not seven small tools that happen to share aesthetics. This is a platform for sovereign personal and small-group computing, with always-on compute anchors as its physical foundation.
+</div>
+
+<!-- ================ FAILURE MODEL ================ -->
+<section class="section-head" id="failure-model">
+  <div class="section-eyebrow">Part Two · The Failure Model is Load-Bearing</div>
+  <h2 class="section-title">Failure is <em>Tuesday</em></h2>
+  <p class="section-intro">The internet was designed to route around failures. SaaS un-designed that for billing reasons. The private mesh restores the original property.</p>
+</section>
+
+<div class="prose">
+  <p>Power cuts, network partitions, dropped packets — the internet protocol assumes failure is normal. Then B2B SaaS centralized everything because central servers were easier to reason about for vendors who wanted to bill per seat. The user got reliable-when-everything-works and broken-when-anything-doesn't.</p>
+</div>
+
+<div class="pullquote">
+  The system is correct under continuous, asynchronous, partial failure, and recovers without intervention when connectivity returns.
+</div>
+
+<div class="prose">
+  <p>Power cuts, ISP outages, the anchor rebooting, a device on cellular with intermittent signal, two devices both offline for a week and coming back with different states — none of this is an error condition. It's Tuesday.</p>
+
+  <p>This is a stronger constraint than "support offline use." It governs every design decision. Re-examine any choice through this lens; if the choice assumes "the network is up" or "the anchor is reachable" or "the user can refresh tokens before they expire," the choice is probably wrong.</p>
+
+  <h3>What this constraint implies</h3>
+
+  <p>Every primitive that involves talking to anything beyond the current device must be:</p>
+  <ul>
+    <li><strong>Local-first</strong> — the local operation succeeds without network; the network operation is layered on top.</li>
+    <li><strong>Idempotent</strong> — replaying the same operation is safe. Same event arriving twice is a no-op.</li>
+    <li><strong>Order-tolerant</strong> — operations can arrive out of order; the merge logic handles it.</li>
+    <li><strong>Resumable</strong> — interrupt at any point, restart later, no corruption.</li>
+    <li><strong>Symmetric</strong> — no privileged role; any peer can be source or destination.</li>
+    <li><strong>Eventual</strong> — given any pair of peers that can eventually reach each other, they converge to the same state.</li>
+  </ul>
+
+  <p>These are CRDT-shaped properties at the protocol level. Tools may use the merge-helpers library for simpler semantics on top, but the underlying protocol always provides these guarantees.</p>
+
+  <h3>The six v1.0 hooks for the failure model</h3>
+
+  <ol>
+    <li><strong>Operation queue.</strong> Every fabric primitive that crosses a network boundary has a local queue with on-disk durability. Tools call <code>fabric.sync.append(event)</code> and the SDK handles when the network can actually carry it out. A crashed device doesn't lose intent.</li>
+    <li><strong>Causal ordering metadata.</strong> Every event carries a vector clock (or Lamport timestamps + device IDs at minimum). Receivers can determine causal relationships regardless of arrival order.</li>
+    <li><strong>Bounded staleness visibility.</strong> Every Vault query returns data plus a freshness indicator — when did this device last sync with each peer? Tools choose what to show; the data is available to them.</li>
+    <li><strong>Idempotency keys on Bridge calls.</strong> Bridge calls with side effects carry idempotency keys. External services that support deduplication use them. Retry is safe even after network failure mid-call.</li>
+    <li><strong>Graceful degradation surface.</strong> The SDK exposes "what's currently broken" to tools. "Anchor unreachable, last seen 12 minutes ago." "Revocation list is 3 hours stale." Tools choose how to render this.</li>
+    <li><strong>Conflict surface.</strong> When two peers both wrote in the same causal slot, the Sync primitive emits a conflict event. Tools listen and decide. Append-only tools ignore conflicts; tools with mutable state handle them.</li>
+  </ol>
+
+  <h3>Queue visibility to users</h3>
+
+  <p>Default behavior: complexity is hidden. The user opens a tool, the tool just works, pending operations resolve invisibly when the network supports them.</p>
+
+  <p>Power-user behavior: a fabric admin UI exposes the operation queue. "5 events pending sync to anchor. Last successful sync 2 hours ago." User can inspect, retry, cancel pending operations. This view is opt-in — users navigate to it deliberately.</p>
+
+  <p>This dual mode matches the realistic audience: early users will be power users who drag in family members. The power user wants visibility; the family member wants invisibility. Default hidden, accessible on demand.</p>
+</div>
+
+<!-- ================ ARCHITECTURE DIAGRAM ================ -->
+<section class="section-head" id="architecture">
+  <div class="section-eyebrow">Part Three · Layered Architecture</div>
+  <h2 class="section-title">Seven <em>layers</em>, one mesh</h2>
+  <p class="section-intro">Each layer is independently useful, independently shippable, and reinforces the others.</p>
+</section>
+
+<div class="diagram-frame">
+  <svg width="100%" viewBox="0 0 760 580" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
+    <title id="arch-title">Layered architecture of the Private Mesh</title>
+    <desc id="arch-desc">Seven horizontal layers from consumers at the top through fabric SDK, protocol, transports, network plane, hardware anchor, and observability at the bottom.</desc>
+
+    <defs>
+      <marker id="arrow-down" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#6b6358" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- Layer 1: Consumers -->
+    <rect x="40" y="20" width="680" height="68" rx="4" fill="#f0e6d6" stroke="#8b2a0e" stroke-width="0.5" opacity="0.4"/>
+    <text x="380" y="42" text-anchor="middle" class="svg-title" font-weight="500">Consumers (any shape)</text>
+    <text x="380" y="62" text-anchor="middle" class="svg-subtitle">Browser tools · Native binaries · CLIs · Daemons · Agents · Devices</text>
+    <text x="380" y="78" text-anchor="middle" class="svg-subtitle" font-style="italic">Tijori · Bahi · Slate · Shared list · nakli-cli · ...</text>
+
+    <!-- Layer 2: Fabric SDK -->
+    <rect x="40" y="100" width="680" height="60" rx="4" fill="#e8d8b8" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="124" text-anchor="middle" class="svg-title" font-weight="500">Fabric SDK</text>
+    <text x="380" y="144" text-anchor="middle" class="svg-subtitle">JavaScript (browsers) · Go (binaries, daemons, Hub, CLI)</text>
+
+    <!-- Primitives row inside SDK area -->
+    <g transform="translate(40, 168)">
+      <rect x="0" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="47" y="18" text-anchor="middle" class="svg-label" font-size="11">Identity</text>
+      <rect x="100" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="147" y="18" text-anchor="middle" class="svg-label" font-size="11">Grant</text>
+      <rect x="200" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="247" y="18" text-anchor="middle" class="svg-label" font-size="11">Vault</text>
+      <rect x="300" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="347" y="18" text-anchor="middle" class="svg-label" font-size="11">History</text>
+      <rect x="400" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="447" y="18" text-anchor="middle" class="svg-label" font-size="11">Sync</text>
+      <rect x="500" y="0" width="95" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="547" y="18" text-anchor="middle" class="svg-label" font-size="11">LLM</text>
+      <rect x="600" y="0" width="80" height="28" rx="3" fill="#d8c8a8" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="640" y="18" text-anchor="middle" class="svg-label" font-size="11">Bridge</text>
+    </g>
+
+    <!-- Layer 3: Protocol -->
+    <rect x="40" y="220" width="680" height="46" rx="4" fill="#f5e8c8" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="240" text-anchor="middle" class="svg-title" font-weight="500">Fabric Protocol</text>
+    <text x="380" y="258" text-anchor="middle" class="svg-subtitle">HTTP/JSON wire format · macaroon capability tokens · language-neutral</text>
+
+    <!-- Layer 4: Transports -->
+    <rect x="40" y="278" width="680" height="76" rx="4" fill="#e8d4b0" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="298" text-anchor="middle" class="svg-title" font-weight="500">Transport Reference Implementations</text>
+    <g transform="translate(70, 312)">
+      <rect x="0" y="0" width="180" height="34" rx="3" fill="#d4c090" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="90" y="14" text-anchor="middle" class="svg-label" font-size="11" font-weight="500">nakli-hub</text>
+      <text x="90" y="28" text-anchor="middle" class="svg-subtitle" font-size="10">Go binary · self-hosted</text>
+
+      <rect x="200" y="0" width="180" height="34" rx="3" fill="#d4c090" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="290" y="14" text-anchor="middle" class="svg-label" font-size="11" font-weight="500">nakli-cf-worker</text>
+      <text x="290" y="28" text-anchor="middle" class="svg-subtitle" font-size="10">Cloudflare Worker · zero-ops</text>
+
+      <rect x="400" y="0" width="180" height="34" rx="3" fill="#d4c090" stroke="#8b2a0e" stroke-width="0.5"/>
+      <text x="490" y="14" text-anchor="middle" class="svg-label" font-size="11" font-weight="500">nakli-local</text>
+      <text x="490" y="28" text-anchor="middle" class="svg-subtitle" font-size="10">Local Network · mDNS</text>
+    </g>
+
+    <!-- Layer 5: Network Plane -->
+    <rect x="40" y="366" width="680" height="60" rx="4" fill="#dcc8a0" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="390" text-anchor="middle" class="svg-title" font-weight="500">Network Plane</text>
+    <text x="380" y="410" text-anchor="middle" class="svg-subtitle">NakliTechie-wrapped NetBird · sovereign mesh VPN · optional but recommended</text>
+
+    <!-- Layer 6: Hardware -->
+    <rect x="40" y="438" width="680" height="68" rx="4" fill="#d0bc8c" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="462" text-anchor="middle" class="svg-title" font-weight="500">The Anchor (always-on compute)</text>
+    <text x="380" y="482" text-anchor="middle" class="svg-subtitle">Mac mini · Mac Studio · Strix Halo · DGX Spark · NUC · NAS · cluster</text>
+    <text x="380" y="498" text-anchor="middle" class="svg-subtitle" font-style="italic">or any always-on machine the user owns</text>
+
+    <!-- Layer 7: Observability (Gleam) -->
+    <rect x="40" y="518" width="680" height="46" rx="4" fill="#c8b078" stroke="#8b2a0e" stroke-width="0.5" opacity="0.5"/>
+    <text x="380" y="538" text-anchor="middle" class="svg-title" font-weight="500">Observability · Gleam</text>
+    <text x="380" y="556" text-anchor="middle" class="svg-subtitle">Fleet telemetry · cluster status · RDMA over Thunderbolt 5</text>
+
+    <!-- Arrows between layers -->
+    <line x1="380" y1="88" x2="380" y2="98" stroke="#6b6358" stroke-width="0.8" marker-end="url(#arrow-down)"/>
+    <line x1="380" y1="218" x2="380" y2="218" stroke="#6b6358" stroke-width="0.8"/>
+    <line x1="380" y1="266" x2="380" y2="276" stroke="#6b6358" stroke-width="0.8" marker-end="url(#arrow-down)"/>
+    <line x1="380" y1="354" x2="380" y2="364" stroke="#6b6358" stroke-width="0.8" marker-end="url(#arrow-down)"/>
+    <line x1="380" y1="426" x2="380" y2="436" stroke="#6b6358" stroke-width="0.8" marker-end="url(#arrow-down)"/>
+    <line x1="380" y1="506" x2="380" y2="516" stroke="#6b6358" stroke-width="0.8" marker-end="url(#arrow-down)"/>
+  </svg>
+  <div class="diagram-caption">Architecture · seven layers, each independently shippable and useful</div>
+</div>
+
+<div class="prose">
+  <p>Each layer is independently useful. Each layer is independently shippable. Each layer reinforces the others. The whole is dramatically more than the sum of its parts because they share an audience, an ethos, and a coherent design philosophy.</p>
+</div>
+
+<!-- ================ WHY THIS EXISTS ================ -->
+<section class="section-head" id="why">
+  <div class="section-eyebrow">Part Four · Why This Exists</div>
+  <h2 class="section-title">Six <em>problems</em>, one stack</h2>
+  <p class="section-intro">The stack exists because each of these problems is real, and no integrated solution treats them as one.</p>
+</section>
+
+<div class="prose">
+  <h3>1. Sovereignty is structurally unwon</h3>
+  <p>SaaS won the last decade by trading data sovereignty for convenience. The opt-out community (NakliTechie's audience) has bypassed this trade by accepting more friction — each tool re-rolling its own storage, auth, sync. The result is a portfolio of excellent islands and very few bridges. No platform value compounds. Every new tool starts from zero on infrastructure questions that should be solved once.</p>
+
+  <h3>2. The compute anchor has no native software stack</h3>
+  <p>Apple, NVIDIA, AMD, Framework are shipping the hardware. The software stack assumes you'll use the box to run someone else's services — Ollama for inference, Plex for media, Home Assistant for automation. There is no integrated stack that treats the anchor as the foundation of the user's (or group's) personal computing universe.</p>
+
+  <h3>3. Mesh VPNs solve networking, not data</h3>
+  <p>Tailscale, Headscale, NetBird, Nebula all solve "devices can reach each other." They do not solve "tools can share authenticated, authorized data with each other." That layer is missing. People build it ad hoc per project. The fabric is the missing data layer above the network plane.</p>
+
+  <h3>4. Local-first inference needs local-first data</h3>
+  <p>The locally-run LLM is useless without locally-available data. RAG over your notes, fine-tuning on your patterns, agents acting in your context — none of this works if your data lives in SaaS silos. The private mesh makes the data layer match the inference layer: both local, both owned, both sovereign.</p>
+
+  <h3>5. B2B SaaS centralized the resilience the internet was designed for</h3>
+  <p>The internet was designed for failure as normal. SaaS un-designed that for billing reasons. The private mesh restores the original property: continuous, asynchronous, partial failure is the operating condition, not the exception.</p>
+
+  <h3>6. AI assistants change what one person can ship</h3>
+  <p>Three people with AI assistants can do what twenty did a decade ago. The constraint on ambitious sovereign computing projects has never been the design or the audience — it's been the engineering cost. That constraint has dropped by an order of magnitude. The opportunity is to build at the ambition level that matches the new cost structure.</p>
+</div>
+
+<!-- ================ AUDIENCE ================ -->
+<section class="section-head" id="audience">
+  <div class="section-eyebrow">Part Five · Audience</div>
+  <h2 class="section-title">Who this is <em>for</em></h2>
+  <p class="section-intro">A worldview, not a demographic. People who opted out of the SaaS pitch and value ownership, continuity, sovereignty, calm, craft.</p>
+</section>
+
+<div class="prose">
+  <h3>Primary: the private-mesh operator</h3>
+  <p>The person who sets up the mesh and brings others onto it. Has at least one always-on machine somewhere (home, office, co-located), or is willing to acquire one. Refuses SaaS by default. Accepts third-party infrastructure only as raw substrate. Multi-device. Comfortable with technology. Wants the data, the tools, the inference, and the network all under their control or their group's control.</p>
+
+  <p>These are the people who run the mesh. They might be:</p>
+  <ul>
+    <li>A technical individual running it for their own use</li>
+    <li>A technical family member running it for their household</li>
+    <li>A small-business owner or technical lead running it for an office of 3-25 people</li>
+    <li>A distributed small team's designated infrastructure person</li>
+    <li>A co-working space's resident technologist</li>
+    <li>A homelab enthusiast extending their setup beyond their own use</li>
+  </ul>
+
+  <h3>Secondary: the dragged-along participant</h3>
+  <p>The people the operator brings onto the mesh — family members, colleagues, small-team participants. Not necessarily technical. Want things to just work. The mesh must be usable by them — defaults hide complexity, the primary device is "the thing my brother / colleague / sysadmin set up," failure modes are visible to the operator (not them).</p>
+
+  <h3>Tertiary: the tool author</h3>
+  <p>Wants to ship sovereign, browser-native tools without re-rolling sync, auth, storage, AI integration each time. Builds on the fabric SDK, inherits multi-device + capability enforcement + LLM access for free. Spec-first methodology fits naturally.</p>
+
+  <h3>Quaternary: the compute enthusiast and small-business operator</h3>
+  <p>The Apple Silicon cluster homelab person, the Exo user, the Strix Halo early adopter, the small business looking at on-prem AI inference. Have the hardware (or are about to acquire it); lack the integrated software stack.</p>
+</div>
+
+<div class="callout">
+  <div class="callout-label">Who this is not for</div>
+  <p style="margin: 0;">Users who want SaaS convenience without sovereignty trade-offs. Tool authors building outside append-only event-sourced data models. Users who refuse all third-party infrastructure. Large organizations needing audit/compliance/governance tooling. Anyone wanting a general-purpose enterprise capability platform.</p>
+</div>
+
+<!-- ================ AGENTS AS PRINCIPALS ================ -->
+<section class="section-head" id="agents">
+  <div class="section-eyebrow">Part Five-and-a-half · The Lens That Upends Everything</div>
+  <h2 class="section-title">Agents as <em>principals</em></h2>
+  <p class="section-intro">The portfolio was built for humans. KanZen, BOFH, Bahi, Stance, Mehfil — all assume a human at the keyboard. That logic is being upended in real time. The Private Mesh must serve both worlds.</p>
+</section>
+
+<div class="prose">
+  <p>Until very recently, "consumer of a tool" meant "human using a tool." A human writes the Bahi entry, picks the Tijori credential, drafts the Bolo recording, organizes the KanZen note. The thinking, the choice-making, the voice — those were the point. Tools gave humans leverage on their own intent.</p>
+
+  <p>That assumption is collapsing. Agents — LLM-driven, capable of multi-step reasoning, equipped with tools and credentials — are becoming the primary mode of use for a growing share of computing. Not as occasional power-user surfaces, not as scripted automation. As <em>principals in their own right</em>, acting on behalf of humans who delegate to them and review at decreasing frequency.</p>
+
+  <p>By the time the Private Mesh ships v1.0, a meaningful share of Bahi entries will be created by an agent acting under a Grant, not by a human typing. By v2.0, the ratio may have flipped for many users. This is not a future scenario being speculated about. It is the operating reality the platform must work in.</p>
+</div>
+
+<div class="pullquote">
+  The Private Mesh wasn't designed for either scenario specifically — it was designed for sovereign computing. Sovereignty matters in both. Possibly more in the agent-heavy one.
+</div>
+
+<div class="prose">
+  <h3>What survives, what shifts, what becomes essential</h3>
+
+  <p>Walking the existing portfolio through the agent-era lens, honestly:</p>
+
+  <h4>Tools that survive cleanly</h4>
+  <p>Tools where <em>the agent doing the work</em> is the point in the new world. <strong>Bahi</strong> (agent does the bookkeeping, human reviews). <strong>VaultMind</strong> (agent reads the notes, surfaces what's relevant). <strong>Tijori</strong> (agent fetches the right credential at the right moment). <strong>Kagaz</strong> (agent generates the site from a brief). These don't break — they get more valuable because agents can do the heavy lifting. The fabric makes this safe.</p>
+
+  <h4>Tools that get philosophically strange</h4>
+  <p>Tools where the <em>human voice</em> is much of the value. <strong>BOFH</strong> only works if the human writes the email; an agent writing BOFH replies misses the point. <strong>KanZen</strong> organizes knowledge — but whose knowledge, organized by whom? <strong>Bolo</strong> is for a human speaking; agent speech is a different category entirely. <strong>Stance</strong> anchors positions — if an agent takes a position, whose position is it?</p>
+
+  <p>These tools don't break technically; the fabric serves them just fine. They break philosophically. The question "what is this tool for, in a world where agents do most of the using" needs a real answer for each. Maybe the answer is "this tool stays explicitly human-only, and that's its point." Maybe it transforms — Bolo becomes a place for humans to record what they actually said, distinguished from what their agents said on their behalf. Maybe it retires. The platform doesn't decide; the per-tool conversation does.</p>
+
+  <h4>Tools that become essential</h4>
+  <p>Tools whose value scales with agent use. <strong>Stance</strong> becomes more important when agents are acting on your behalf and you need a tamper-evident record of <em>your</em> positions versus <em>theirs</em>. <strong>Mahalla</strong> becomes essential when "the agent represents you in the community" demands verifiable identity. <strong>Mehfil</strong> becomes vital when humans-in-rooms-with-other-humans is the rare thing.</p>
+
+  <p>Some tools become more human under agent pressure. Others become less relevant. Both are fine. The platform survives either way.</p>
+
+  <h3>Agents as principals</h3>
+
+  <p>The architectural commitments needed to make the agent-era work safely:</p>
+
+  <p><strong>Agents are consumers in the D-Consumers sense, but also principals with their own identity.</strong> An agent has its own keypair, minted at provisioning. When the agent acts, it acts as itself, holding Grants from a human. The Grant chain proves authorization; the agent's own signature proves which agent acted. History records both.</p>
+
+  <p><strong>All capability flows downstream from a human-issued root Grant.</strong> Macaroon attenuation is the security boundary. An agent cannot mint a Grant of strictly greater scope than the Grant it holds. The fabric enforces this server-side at every transport implementation — not by client-side convention. (See Principle 11.)</p>
+
+  <p><strong>Bridge calls with side effects are higher-stakes for agents than Vault reads.</strong> Grants for Bridge operations can carry caveats: <em>"requires human approval"</em>, <em>"max N calls per hour"</em>, <em>"only to these domains"</em>, <em>"max amount $X per transaction"</em>. Macaroon caveats express these natively; transport implementations enforce them; the fabric makes them legible to the human at provisioning time.</p>
+
+  <p><strong>All agent operations carry idempotency keys.</strong> The keys are a reliability feature for humans (Hook 4) and a security feature for agents. A prompt-injected agent retrying a "send email" call without idempotency could send the email 50 times. With idempotency, the second call is a no-op.</p>
+
+  <p><strong>All agent actions are in History with full provenance.</strong> Reads matter for audit, not just writes. The chain is traceable: <em>"this Bridge call was made by agent X at time T, under Grant G, which was minted by human H from root Grant R."</em> A human reviewing what their agents did last week can see exactly that.</p>
+
+  <p><strong>Agent retirement is a first-class operation.</strong> Revoke the agent's identity. History records the retirement. All Grants minted by or under that agent become unverifiable from that point. Agents finish tasks; agents get compromised; agents drift; clean retirement is the safety valve.</p>
+
+  <h3>What the fabric does not solve</h3>
+
+  <p><strong>Prompt injection is a real attack surface and mostly not the fabric's problem to solve.</strong> An agent reading data that contains adversarial instructions is an agent-level concern. But the fabric's choices can <em>enable</em> defense rather than hinder it. Tight Grant scoping limits blast radius. Bridge approval caveats give humans a chance to intervene before side effects execute. History anomaly detection (a v1.x feature) surfaces "agent X normally sends 5 emails/day, today it sent 500." None of this defeats prompt injection; all of it makes the consequences bounded and visible.</p>
+
+  <p><strong>Vendor lock-in via agent provisioning is the new "open core with proprietary cloud."</strong> If 80% of users provision agents from Anthropic, OpenAI, or whoever, those vendors influence everything the agent touches. The fabric stays open; the agent provisioning flow stays vendor-neutral. Today you use Claude Code; tomorrow you swap to an open-source agent; the fabric does not notice. This is the BYOK story (Principle 6, non-negotiable 6) extended to agent provisioning.</p>
+
+  <h3>The audience model, revised</h3>
+
+  <p>The dual-audience design (operator + participant) survives, but a third dimension emerges:</p>
+
+  <ul>
+    <li><strong>The operator</strong> still sets up the mesh, mints agents, scopes their Grants, sets up anomaly thresholds.</li>
+    <li><strong>The participant</strong> still uses tools — and now has agents acting on their behalf, with their own consent and configuration.</li>
+    <li><strong>The agents themselves</strong> are consumers without eyes. The "visible to the curious" UX is irrelevant to them. They need a structured operations surface: documented endpoints, structured errors, predictable JSON shapes. The CLI is the human-readable view of this surface; agents talk to the same endpoints directly.</li>
+  </ul>
+
+  <p>A family member's grocery list shouldn't surprise them with agent-added items unless they configured an agent to do that. The dragged-along participant's relationship to "their" agents must be intentional, not inherited from the operator's choices.</p>
+</div>
+
+<div class="callout">
+  <div class="callout-label">Where this leaves the rest of the document</div>
+  <p style="margin: 0;">The architecture survives this lens. The seven primitives are correct. The transport plane is correct. The failure model is correct. What changes is the <em>weight</em> we put on certain properties — Grant enforcement at every transport, idempotency keys on every operation, History as audit trail rather than just integrity log. The decisions log captures these refinements explicitly. (See D-Agents and Principle 11.)</p>
+</div>
+
+<!-- ================ PRIMITIVES ================ -->
+<section class="section-head" id="primitives">
+  <div class="section-eyebrow">Part Six · Seven Primitives</div>
+  <h2 class="section-title">The <em>vocabulary</em> of the fabric</h2>
+  <p class="section-intro">Build order: Identity → Grant → Vault → LLM → History → Sync → Bridge. Each primitive does one thing the others can lean on.</p>
+</section>
+
+<div class="diagram-frame">
+  <svg width="100%" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="prim-title prim-desc">
+    <title id="prim-title">Seven primitives and their relationships</title>
+    <desc id="prim-desc">Identity at the center; Grant gates access; Vault stores events; History adds tamper-evidence; Sync moves events between peers; LLM provides AI access; Bridge connects to external services.</desc>
+
+    <!-- Identity at center -->
+    <circle cx="380" cy="190" r="50" fill="#e8d4b0" stroke="#8b2a0e" stroke-width="1"/>
+    <text x="380" y="186" text-anchor="middle" class="svg-title" font-weight="500" font-size="14">Identity</text>
+    <text x="380" y="202" text-anchor="middle" class="svg-subtitle" font-size="10">keys · FIF</text>
+
+    <!-- Grant -->
+    <circle cx="200" cy="120" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="200" y="118" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Grant</text>
+    <text x="200" y="132" text-anchor="middle" class="svg-subtitle" font-size="10">macaroons</text>
+
+    <!-- Vault -->
+    <circle cx="560" cy="120" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="560" y="118" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Vault</text>
+    <text x="560" y="132" text-anchor="middle" class="svg-subtitle" font-size="10">event store</text>
+
+    <!-- History -->
+    <circle cx="640" cy="240" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="640" y="238" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">History</text>
+    <text x="640" y="252" text-anchor="middle" class="svg-subtitle" font-size="10">hash chain</text>
+
+    <!-- Sync -->
+    <circle cx="500" cy="320" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="500" y="318" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Sync</text>
+    <text x="500" y="332" text-anchor="middle" class="svg-subtitle" font-size="10">peer delivery</text>
+
+    <!-- LLM -->
+    <circle cx="260" cy="320" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="260" y="318" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">LLM</text>
+    <text x="260" y="332" text-anchor="middle" class="svg-subtitle" font-size="10">AI routing</text>
+
+    <!-- Bridge -->
+    <circle cx="120" cy="240" r="42" fill="#d8c490" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="120" y="238" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Bridge</text>
+    <text x="120" y="252" text-anchor="middle" class="svg-subtitle" font-size="10">external APIs</text>
+
+    <!-- Lines from Identity to others -->
+    <line x1="345" y1="160" x2="230" y2="135" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+    <line x1="415" y1="160" x2="530" y2="135" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+    <line x1="425" y1="210" x2="600" y2="240" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+    <line x1="402" y1="237" x2="480" y2="285" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+    <line x1="358" y1="237" x2="280" y2="285" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+    <line x1="335" y1="210" x2="160" y2="240" stroke="#8b6914" stroke-width="0.5" opacity="0.55" stroke-dasharray="3 3"/>
+
+    <!-- Caption -->
+    <text x="380" y="20" text-anchor="middle" class="svg-subtitle" font-style="italic" font-size="11">Identity anchors all primitives · everything else hangs off it</text>
+  </svg>
+  <div class="diagram-caption">The seven primitives · Identity at the center, all others scoped to it</div>
+</div>
+
+<div class="prose">
+  <h3>Identity</h3>
+  <p>Cryptographic identity for users and devices. Passphrase-derived root keys. Per-device subkeys, enrolled via pairing. The fabric never sees the passphrase; only key material derived from it touches the wire, always for verification rather than recovery.</p>
+
+  <p>Identity is portable across origins via the <strong>Fabric Identity File (FIF)</strong> — an encrypted bundle the user holds on disk. Accessible to tools at any origin, decrypted with the passphrase. Works offline (the FIF is a local file).</p>
+
+  <h4>Layered envelope design</h4>
+  <p>The FIF format is two layers:</p>
+  <ul>
+    <li><strong>Outer layer (envelope):</strong> declares how to derive the decryption key. v1.0 ships one envelope type: <code>passphrase-only</code> — salt, KDF parameters (Argon2id), authentication tag.</li>
+    <li><strong>Inner layer (identity material):</strong> keys, configured transports, granted capabilities, optional recent-state cache. Format is independent of the envelope type.</li>
+  </ul>
+
+  <p>In v1.x, new envelope types can be added without changing the inner format: <code>shamir-shares</code>, <code>device-quorum</code>, <code>social-recovery</code>. A v1.0 FIF and a v1.x FIF have identical inner content; they differ only in how the decryption key is obtained.</p>
+
+  <p>No escrow. No NakliTechie recovery service. Loss of all FIF copies + loss of all paths to reconstruct the key = permanent loss. The user bears the responsibility; the fabric provides the architecture for the user to choose their own resilience model.</p>
+
+  <h3>Grant</h3>
+  <p>Capability tokens implementing the macaroon model. A Grant says: "this holder is authorized to do this thing in this scope, subject to these caveats, until this time." Grants can be delegated, attenuated, revoked.</p>
+
+  <p><strong>Two revocation modes</strong>, selected per-grant via caveat:</p>
+  <ul>
+    <li><strong>Opportunistic refresh</strong> — for grants the user holds on their own devices. Long-lived expiry (days or weeks). Holder refreshes opportunistically when network is available; under partition, the existing grant keeps working. Loss-of-network does not lock the user out of their own data.</li>
+    <li><strong>Revocation list</strong> — for delegated grants to other parties. Longer expiry, list-backed revocation. Vault checks the list at use time. List staleness is bounded and visible (Hook 3). Immediate revocation when list propagates; stale-list grace period accepted as a property of the system.</li>
+  </ul>
+
+  <h3>Vault</h3>
+  <p>Encrypted, content-addressed event storage. Append-only per-device event streams, signed by the appending device's key, encrypted with keys derived from Identity. Namespaced per tool. Bahi cannot read Tijori's namespace even though both run on the same fabric.</p>
+  <p>Vault stores blobs. Tools decide what blobs mean. All writes are local-first; reads return what's locally available with bounded-staleness metadata.</p>
+
+  <h3>History</h3>
+  <p>Append-only hash-chained log. Generalizes the pattern already used in Bahi (audit log), Stance (anchored positions), and Tijori (event chain). Used for audit, revocation lists, conflict resolution metadata — anything where order and tamper-evidence matter.</p>
+  <p>History entries are Vault events with extra structure. Each event includes a hash of the previous event in the same stream; verification walks the chain. Different devices extend their own chains independently when offline; when reconnected, peers see each other's appends and merge by union.</p>
+
+  <h3>Sync</h3>
+  <p>Ordered event delivery between authorized peers, providing the five CRDT-shaped properties (idempotent, order-tolerant, resumable, symmetric, eventual).</p>
+
+  <p>The fabric guarantees:</p>
+  <ul>
+    <li>Every authorized peer eventually sees every event</li>
+    <li>Events are delivered in a partial order that respects causal dependencies</li>
+    <li>Concurrent events (same causal ancestor, different devices) are detectable by tools via the conflict surface</li>
+  </ul>
+
+  <p>The fabric does NOT define what events mean, how concurrent events combine into state, or whether duplicate events are errors. A separate <code>fabric-merge-helpers</code> library provides common merge patterns for tools that don't need custom semantics.</p>
+
+  <h3>LLM</h3>
+  <p>A standard interface for AI access. BYOK keys for remote providers never leave the user's environment beyond what the provider necessarily sees. Per-tool grants control which tools can invoke which providers with which budgets.</p>
+
+  <p><strong>Routing order (local-first):</strong></p>
+  <ol>
+    <li>Local inference on the anchor when reachable (highest priority)</li>
+    <li>Local browser inference via Transformers.js, wllama, or MLX-WASM for tasks that fit</li>
+    <li>Remote BYOK as last resort</li>
+  </ol>
+
+  <p><code>nakli-llm-server</code> runs on the anchor and exposes an OpenAI-compatible HTTP API. Under the hood, a thin routing layer picks between MLX (Apple Silicon, best performance for supported models) and llama.cpp (everywhere, broader model coverage).</p>
+
+  <h3>Bridge</h3>
+  <p>External service integration. Third-party APIs accessed with user-provided credentials, brokered through Grant. Every Bridge call carries a Grant; the Grant gates which tool can use which credentials for what purpose with what budget. Credentials never persist in fabric-owned storage — they live in the FIF (encrypted at rest), decrypted in memory per session.</p>
+
+  <p>Bridge calls with side effects carry idempotency keys (Hook 4). Retry after network failure is safe.</p>
+
+  <p><strong>Under agent use</strong> (see "Agents as principals" and D-Agents), Bridge grants are higher-stakes than Vault grants. A Vault grant lets the agent read; a Bridge grant lets the agent <em>act on the world</em>. Bridge grants for side-effect operations support macaroon caveats including <code>requires-human-approval</code> (the operation queues for explicit human confirmation before execution), <code>max-N-per-window</code> (rate limit), <code>only-to-domain</code> (allowed call destinations), <code>max-amount</code> (for financial operations). The fabric expresses these natively; transport implementations enforce them server-side; the provisioning UX surfaces them at the moment the human is minting the Grant.</p>
+</div>
+
+<!-- ================ TRANSPORT PLANE ================ -->
+<section class="section-head" id="transport">
+  <div class="section-eyebrow">Part Seven · Transport Plane</div>
+  <h2 class="section-title">Three <em>paths</em>, one protocol</h2>
+  <p class="section-intro">The Transport Protocol is the spec. Multiple reference implementations ship in v1.0. Any conformant implementation is valid.</p>
+</section>
+
+<div class="diagram-frame">
+  <svg width="100%" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="trans-title trans-desc">
+    <title id="trans-title">Three transport implementations</title>
+    <desc id="trans-desc">A phone, laptop and home anchor connected via three transport options: Cloudflare Worker, local network mDNS, and a self-hosted Hub binary.</desc>
+
+    <defs>
+      <marker id="arrow-trans" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- Devices on left -->
+    <rect x="40" y="50" width="100" height="50" rx="6" fill="#e8d4b0" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="90" y="72" text-anchor="middle" class="svg-title" font-weight="500" font-size="12">Phone</text>
+    <text x="90" y="88" text-anchor="middle" class="svg-subtitle" font-size="10">on cellular</text>
+
+    <rect x="40" y="160" width="100" height="50" rx="6" fill="#e8d4b0" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="90" y="182" text-anchor="middle" class="svg-title" font-weight="500" font-size="12">Laptop</text>
+    <text x="90" y="198" text-anchor="middle" class="svg-subtitle" font-size="10">at home</text>
+
+    <rect x="40" y="270" width="100" height="50" rx="6" fill="#e8d4b0" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="90" y="292" text-anchor="middle" class="svg-title" font-weight="500" font-size="12">Tablet</text>
+    <text x="90" y="308" text-anchor="middle" class="svg-subtitle" font-size="10">at office</text>
+
+    <!-- Three transport boxes in middle -->
+    <rect x="240" y="40" width="240" height="70" rx="6" fill="#f0e0b8" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="360" y="62" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Cloudflare Worker</text>
+    <text x="360" y="80" text-anchor="middle" class="svg-subtitle" font-size="10">Zero-ops · BYO R2 · public URL</text>
+    <text x="360" y="98" text-anchor="middle" class="svg-subtitle" font-size="10" font-style="italic">~50-200 lines TypeScript</text>
+
+    <rect x="240" y="150" width="240" height="70" rx="6" fill="#f0e0b8" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="360" y="172" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">Local Network (mDNS)</text>
+    <text x="360" y="190" text-anchor="middle" class="svg-subtitle" font-size="10">Same Wi-Fi · no internet needed</text>
+    <text x="360" y="208" text-anchor="middle" class="svg-subtitle" font-size="10" font-style="italic">Browser-native, embedded in SDK</text>
+
+    <rect x="240" y="260" width="240" height="70" rx="6" fill="#f0e0b8" stroke="#8b2a0e" stroke-width="0.5"/>
+    <text x="360" y="282" text-anchor="middle" class="svg-title" font-weight="500" font-size="13">nakli-hub (Go binary)</text>
+    <text x="360" y="300" text-anchor="middle" class="svg-subtitle" font-size="10">Self-hosted · single binary</text>
+    <text x="360" y="318" text-anchor="middle" class="svg-subtitle" font-size="10" font-style="italic">Runs on anchor, VPS, Pi</text>
+
+    <!-- Anchor on right -->
+    <rect x="580" y="135" width="140" height="100" rx="6" fill="#d8c490" stroke="#8b2a0e" stroke-width="1"/>
+    <text x="650" y="165" text-anchor="middle" class="svg-title" font-weight="500" font-size="14">The Anchor</text>
+    <text x="650" y="185" text-anchor="middle" class="svg-subtitle" font-size="11">always-on peer</text>
+    <text x="650" y="205" text-anchor="middle" class="svg-subtitle" font-size="11">runs the Hub</text>
+    <text x="650" y="223" text-anchor="middle" class="svg-subtitle" font-size="11">stores ciphertext</text>
+
+    <!-- Lines from devices to transports -->
+    <line x1="140" y1="75" x2="238" y2="75" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+    <line x1="140" y1="185" x2="238" y2="185" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+    <line x1="140" y1="295" x2="238" y2="295" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+
+    <!-- Lines from transports to anchor -->
+    <line x1="482" y1="75" x2="578" y2="160" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+    <line x1="482" y1="185" x2="578" y2="185" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+    <line x1="482" y1="295" x2="578" y2="210" stroke="#8b6914" stroke-width="0.6" marker-end="url(#arrow-trans)"/>
+
+    <!-- Caption -->
+    <text x="360" y="365" text-anchor="middle" class="svg-subtitle" font-style="italic" font-size="11">User picks one or several · all three speak the same Fabric Protocol</text>
+  </svg>
+  <div class="diagram-caption">Three reference transports · users can mix and match</div>
+</div>
+
+<div class="prose">
+  <h3>nakli-hub (Go binary)</h3>
+  <p>Self-hostable transport. Runs on the anchor, on a VPS, on a Raspberry Pi, on whatever always-on machine the user has. Single binary, single config file, no external dependencies. Speaks HTTP/JSON. Stores ciphertext at rest. Authorizes via macaroon validation. The default sovereign path — the user's own box, the user's own data, the user's own network.</p>
+
+  <h3>Cloudflare Worker reference</h3>
+  <p>Zero-ops alternative. ~50-200 lines of TypeScript, user-deployed, backed by R2 for blob storage and KV for state. For users without an anchor yet, or as a fallback path. The "I want this to just work without setting up a server" path.</p>
+
+  <h3>Local Network (mDNS)</h3>
+  <p>Two devices on the same Wi-Fi sync directly without going through any external service. mDNS discovery finds peers; HTTPS over local IP carries the protocol. No anchor required. No Cloudflare. No internet at all.</p>
+
+  <p>This is the most failure-resilient mode (everything else can be down, this still works) and the most sovereign (no third party at any layer). For office scenarios, it's the right default. For households where everyone's on home Wi-Fi, or offices where everyone's on the corporate LAN, it works even when the WAN is down.</p>
+
+  <h3>Future transports</h3>
+  <p>Anyone can write another implementation conformant to the spec: Vercel Edge + Vercel Blob, Deno Deploy + Deno KV, AWS Lambda + S3, plain Node.js + filesystem, embedded in another tool. Conformance tests verify any implementation against the protocol spec. Multiple implementations can coexist in one user's setup.</p>
+</div>
+
+<!-- ================ NETWORK PLANE ================ -->
+<section class="section-head" id="network">
+  <div class="section-eyebrow">Part Eight · Network Plane</div>
+  <h2 class="section-title">Reaching the <em>anchor</em>, sovereignly</h2>
+  <p class="section-intro">Three options for remote access. NetBird-wrapped mesh is the recommended default.</p>
+</section>
+
+<div class="prose">
+  <h3>Option 1: User has a public endpoint</h3>
+  <p>Hub runs behind the user's reverse proxy (Caddy, nginx, Traefik) with a real TLS certificate on a domain the user owns. Phone connects to <code>hub.user-domain.com</code> from anywhere. Standard internet plumbing.</p>
+
+  <h3>Option 2: NakliTechie mesh (NetBird wrapper)</h3>
+  <p>A wrapped NetBird coordination plane, bundled with the anchor. WireGuard-based, peer-to-peer encrypted, NAT-traversal-handled. Phone joins the mesh; Hub is reachable at a stable mesh-internal address.</p>
+
+  <h4>Why NetBird, not Headscale</h4>
+  <p>NetBird is BSD-3 open-source all the way down, including clients. No proprietary GUI pieces anywhere. The all-open ethos matches the rest of the stack. NetBird's identity model integrates cleanly with fabric Identity. NetBird was designed for self-hosting from day one rather than being a self-hostable port of a centralized design.</p>
+
+  <p>The wrapper does NOT reinvent WireGuard or rewrite NetBird's components. It provides:</p>
+  <ul>
+    <li>One-tap pairing for new devices (QR from anchor, scan from phone, done)</li>
+    <li>Fabric-aware identity integration (mesh identity derived from fabric Identity)</li>
+    <li>Sensible defaults for the typical home or small-office use case</li>
+    <li>Bundled distribution with the anchor installer</li>
+  </ul>
+
+  <p>If the user already runs Tailscale, NetBird, or another mesh, they can use it instead — the fabric does not care which mesh is in use, only that the Hub is reachable.</p>
+
+  <h3>Option 3: Cloud-mediated transport</h3>
+  <p>Cloudflare Worker (or equivalent) acts as the public endpoint. No anchor required for reachability. Sovereignty story is slightly weaker (Cloudflare sees ciphertext and metadata) but acceptable for users who haven't committed to an anchor yet.</p>
+
+  <p>The fabric supports all three. Most users will end up using Option 2 once the anchor is real, with Local Network handling same-network sync and Cloudflare as fallback.</p>
+</div>
+
+<!-- ================ HARDWARE ================ -->
+<section class="section-head" id="hardware">
+  <div class="section-eyebrow">Part Nine · Hardware</div>
+  <h2 class="section-title">The <em>anchor</em></h2>
+  <p class="section-intro">Hardware-agnostic by design. Apple Silicon is the reference platform; x86 Linux is first-class; a Pi is enough for storage and Hub.</p>
+</section>
+
+<div class="prose">
+  <h3>Reference platform: Apple Silicon</h3>
+  <ul>
+    <li>Mac mini, Mac Studio, MacBook running unattended (at home or office), or a small cluster connected via Thunderbolt 5</li>
+    <li>macOS 26.2+ for RDMA over Thunderbolt 5 (real distributed inference becomes possible)</li>
+    <li>MLX as the primary local inference engine for supported models</li>
+    <li>Bhai's existing setup (M4 Pro + M4 Max Studio over SSH) is reference dev environment</li>
+  </ul>
+
+  <h3>Secondary platform: x86 Linux</h3>
+  <ul>
+    <li>Strix Halo desktops (Framework, ASUS, others)</li>
+    <li>NVIDIA DGX Spark and successors</li>
+    <li>Generic Linux box with a decent GPU or unified-memory APU</li>
+    <li>llama.cpp as the local inference engine</li>
+  </ul>
+
+  <h3>Tertiary platform: any always-on Linux box</h3>
+  <ul>
+    <li>NAS (Synology, QNAP, custom)</li>
+    <li>Raspberry Pi 5 or equivalent SBC</li>
+    <li>VPS for users without dedicated hardware yet</li>
+    <li>No local inference; the box is just the Hub + storage anchor</li>
+  </ul>
+
+  <p>The private mesh scales down to "a Pi running Hub" and up to "an Apple Silicon cluster running cluster-distributed inference." The fabric and protocols are the same across the range; what changes is what the anchor can do beyond hosting the Hub.</p>
+</div>
+
+<!-- ================ GLEAM ================ -->
+<section class="section-head" id="gleam">
+  <div class="section-eyebrow">Part Ten · Observability</div>
+  <h2 class="section-title">Gleam, the <em>operations</em> surface</h2>
+  <p class="section-intro">Already in flight as a standalone project. Becomes a first-class layer of the private mesh.</p>
+</section>
+
+<div class="prose">
+  <p>The anchor runs Gleam; the user's fleet (laptop, phone, additional machines) feeds Gleam telemetry; the user sees what their stack is doing.</p>
+
+  <p>Specifically, Gleam is where the private mesh becomes observable to the user:</p>
+  <ul>
+    <li>Hub throughput, latency, error rates</li>
+    <li>Inference workload and queue depth on the anchor</li>
+    <li>Sync activity per tool per device</li>
+    <li>Mesh-layer connectivity status</li>
+    <li><strong>Operation queue depth and age</strong> (Hook 1 visibility)</li>
+    <li><strong>Per-peer freshness</strong> (Hook 3 visibility, aggregated across the fleet)</li>
+  </ul>
+
+  <p>Gleam is the operations interface for the power-user mode. Not required to use the stack; the place power users go when they want to see what's happening or when something is off.</p>
+
+  <p>Gleam upstreams to last9 from a position of credibility once the private mesh is real.</p>
+</div>
+
+<!-- ================ TOOLS ================ -->
+<section class="section-head" id="tools">
+  <div class="section-eyebrow">Part Eleven · Tools Layer</div>
+  <h2 class="section-title">Where <em>users</em> live</h2>
+  <p class="section-intro">Browser-native tools sit on top. Existing tools opt in on their own timing. New tools start fabric-native.</p>
+</section>
+
+<div class="prose">
+  <h3>Existing tools</h3>
+  <p>Tijori, Bahi, Slate, VaultMind, Stance, Mahalla, Mehfil, Bolo and the rest of the portfolio are doing fine and not migration candidates. Each tool's existing roadmap continues. Some will adopt the fabric SDK when it's stable, on the author's own timing. The fabric is offered, not imposed.</p>
+
+  <h3>Phase 1 conformance consumer: a shared list</h3>
+  <p>The first fabric-native tool. A household shared list — groceries, todos, packing lists. One append-only stream of items; tick states are events. Multi-user: Bhai, son, brother all editing the same list daily.</p>
+
+  <p>This tool's job is to prove Phase 1 works under real conditions. Multi-user pressure from day one. Daily use is automatic for any household. Concurrent writes from different devices/users naturally happen every week — exactly the scenarios the failure model has to handle.</p>
+
+  <p>If it works well, it becomes a portfolio-worthy tool. "Family list that doesn't require everyone to sign up for an account or share an iCloud" is a real gap.</p>
+
+  <h3>Subsequent tools</h3>
+  <p>After the shared list ships and the fabric stabilizes, new fabric-native tools follow at portfolio pace. Each one is now half the work it would have been pre-fabric because storage/sync/auth/LLM are inherited.</p>
+</div>
+
+<!-- ================ PAIRING ================ -->
+<section class="section-head" id="pairing">
+  <div class="section-eyebrow">Part Twelve · Pairing UX</div>
+  <h2 class="section-title">Adding a <em>device</em></h2>
+  <p class="section-intro">Three mechanisms ship in v1.0. Two more documented for later.</p>
+</section>
+
+<div class="prose">
+  <h3>v1.0 mechanisms (all three)</h3>
+
+  <h4>A. QR code (primary)</h4>
+  <p>Existing device displays QR containing one-time pairing capability + rendezvous endpoint + FIF integrity commitment. New device scans, prompts for passphrase, decrypts FIF, joins fabric. Camera-based; works phone-to-laptop, laptop-to-phone, phone-to-phone.</p>
+
+  <h4>B. Short numeric code (typed in)</h4>
+  <p>Existing device displays 6-digit code. New device prompts user to enter it. Code unlocks the pairing capability on a shared rendezvous. Works when QR fails (bad lighting, broken camera, screen-to-screen on same device).</p>
+
+  <h4>C. Magic link (one-time URL)</h4>
+  <p>Existing device generates a URL containing the pairing capability. User shares to new device via any channel (AirDrop, message, paste). New device follows URL, prompts for passphrase, joins. For "I'm at work, want to add my laptop, source device is at home." Magic link supports both internet-mediated and local-network-only modes (URL points at source device's local IP when applicable).</p>
+
+  <p>All three mechanisms must work offline-local where the topology allows — two devices on the same Wi-Fi can pair via QR or code without any internet.</p>
+
+  <h3>Deferred to v1.x (documented, not built)</h3>
+
+  <h4>D. BLE proximity</h4>
+  <p>Devices discover each other via Bluetooth when physically close. User approves on source device, new device receives pairing capability over BLE. Best UX when devices are nearby. Limited by browser BLE API support (Chrome supports, Safari mostly doesn't). Considered for v1.x once the v1.0 mechanisms have surfaced what users actually need.</p>
+
+  <h4>E. NFC tap</h4>
+  <p>Physical tap between two devices. Smallest UX surface — one gesture, no codes, no scanning. Limited to phones with NFC and browsers with NFC API support. Considered for v1.x.</p>
+
+  <p>Both D and E are real and worth supporting; neither is so critical that v1.0 must include them. The protocol design accommodates them without changes — they're additional ways to deliver the same pairing capability that QR/code/link deliver.</p>
+</div>
+
+<!-- ================ SCOPE ================ -->
+<section class="section-head" id="scope">
+  <div class="section-eyebrow">Part Thirteen · Scope</div>
+  <h2 class="section-title">In, and <em>not</em>, in scope</h2>
+  <p class="section-intro">Maximalist for what's in. Explicit about what's out.</p>
+</section>
+
+<div class="prose">
+  <h3>What's in scope</h3>
+  <ul>
+    <li>Full design and implementation of the seven primitives</li>
+    <li>The Fabric Protocol spec, with three reference transport implementations in v1.0 (Go Hub, Cloudflare Worker, Local Network/mDNS)</li>
+    <li>Reference Fabric SDKs in JavaScript and Go (v1.0)</li>
+    <li>A reference non-browser consumer — the <code>nakli-cli</code> (Go) — as the operator surface for queue/freshness/grants</li>
+    <li>The Fabric Identity File (FIF) format with layered envelope (passphrase-only in v1.0; hooks for v1.x envelope types)</li>
+    <li>The six failure-model hooks as v1.0 requirements</li>
+    <li>The NetBird-wrapped mesh layer (separate parallel project)</li>
+    <li>The local inference daemon (<code>nakli-llm-server</code>) with MLX + llama.cpp routing</li>
+    <li>A conformance test suite that any transport or SDK implementation must pass</li>
+    <li>Documentation sufficient for an external tool author to build a fabric-consuming tool</li>
+    <li>The shared list tool as Phase 1 conformance consumer</li>
+    <li>Migration paths (optional, on tool author's timing) for existing portfolio tools</li>
+    <li>Integration with Gleam for observability</li>
+    <li>Anchor install script for Apple Silicon (and x86 Linux soon after)</li>
+  </ul>
+
+  <h3>What's not in scope (now)</h3>
+  <ul>
+    <li>Cross-organization capability delegation. Personal scale only.</li>
+    <li>General-purpose pub-sub or message queuing.</li>
+    <li>Server-side hosted tier as a default offering. (Optional managed Relay tier as a monetization path, distinctly secondary.)</li>
+    <li>Mobile-native apps. Web/PWA first. Native wrappers possible later if PWA limits become real blockers.</li>
+    <li>Account recovery via NakliTechie infrastructure. No escrow, no reset.</li>
+    <li>Real-time collaborative editing via the fabric primitives directly. Tools may implement CRDTs on top of Sync, but the fabric does not provide live cursors / OT / RGA out of the box.</li>
+    <li>Replacing the user's existing identity providers, password managers, or daily-driver apps that they're happy with.</li>
+    <li>BLE-proximity pairing in v1.0 (deferred).</li>
+    <li>NFC-tap pairing in v1.0 (deferred).</li>
+    <li>Native macOS/Linux/Windows installers in v1.0 (curl|bash installer ships first; signed packages in v1.2).</li>
+    <li>VM image distribution in v1.0 (Tart/Lima images in v1.2).</li>
+    <li>Distributed FIF / Shamir / social recovery in v1.0 (hooks present from day one; full feature in v1.x).</li>
+  </ul>
+</div>
+
+<!-- ================ PRINCIPLES ================ -->
+<section class="section-head" id="principles">
+  <div class="section-eyebrow">Part Fourteen · Guiding Principles</div>
+  <h2 class="section-title">Ten <em>principles</em></h2>
+  <p class="section-intro">The principles guide future decisions. When a new question comes up, these are what to reach for first. They sit above the non-negotiables: principles are the source, non-negotiables are the consequence.</p>
+</section>
+
+<ol class="principles-list">
+  <li>
+    <h4>Failure resistance is structural, not optional.</h4>
+    <p>Power cuts, network partitions, dropped peers, dead devices are operating conditions, not error conditions. Every primitive is local-first; every network operation is queued; every state is eventually consistent. The internet was designed for this; SaaS un-designed it for billing reasons; the private mesh restores it.</p>
+  </li>
+  <li>
+    <h4>The home is online even when the internet isn't.</h4>
+    <p>Devices on the same network can reach each other without going through anything external. Sync, inference, capability checks, pairing — all work between local peers when WAN is dead. Internet outage degrades the stack's reach, not its function.</p>
+  </li>
+  <li>
+    <h4>Primitives are interface-agnostic.</h4>
+    <p>Whatever's underneath must support HTML, native apps, CLIs, or anything else. HTML is the preferred surface for the portfolio; others may prefer native; both are first-class. The fabric speaks HTTP/JSON; any client that speaks HTTP/JSON is a valid consumer. Tools choose their own surface; the fabric doesn't care.</p>
+  </li>
+  <li>
+    <h4>Sovereignty over convenience, but convenience is not the enemy.</h4>
+    <p>The user controls the data, the keys, the infrastructure. But "sovereign" is not an excuse for friction. Where convenience can be delivered without compromising sovereignty — good defaults, smooth pairing, automatic transport selection, opt-in complexity — deliver it. <em>Sovereignty without usability is dogma; usability without sovereignty is SaaS.</em> The private mesh is both.</p>
+  </li>
+  <li>
+    <h4>Visible to the curious, invisible to the unwilling.</h4>
+    <p>Power users see queues, freshness, error states, internals. Family members see "open app, use app." Both audiences are first-class; the design accommodates both via opt-in depth, not by forcing complexity on the unwilling or hiding it from the willing.</p>
+  </li>
+  <li>
+    <h4>Open all the way down.</h4>
+    <p>No proprietary components in the critical path. The stack, the dependencies (NetBird BSD-3, WireGuard open), the protocols, the binaries are all auditable. "Open core with proprietary cloud" is the failure mode the stack exists to reject; the stack must not become that.</p>
+  </li>
+  <li>
+    <h4>The user owns their failure modes.</h4>
+    <p>No NakliTechie recovery service. No escrow. If you lose all your keys, your data is gone. The fabric provides the architecture for the user to choose their resilience (multi-device copies, Shamir, social recovery), but the choice is theirs and the consequence is theirs. Sovereignty includes the right to lock yourself out.</p>
+  </li>
+  <li>
+    <h4>The anchor is a peer, not the center.</h4>
+    <p>The anchor (home box, office workstation, NAS, cluster) is the most-available peer, the durability backstop, the inference workhorse. But the fabric works when the anchor is down. Phones still talk to phones; laptops still talk to laptops; data still syncs across paths the anchor wasn't on. The anchor being unavailable degrades the mesh's capabilities, not its correctness.</p>
+  </li>
+  <li>
+    <h4>Local-first inference is the default; remote is a fallback.</h4>
+    <p>The anchor is meant for inference. Tools that need AI route to local engines first (MLX, llama.cpp), browser-local for tasks that fit, remote BYOK as last resort. The user's data does not leave their fleet unless the user explicitly opted in for that specific task. This is not a privacy bonus; it <em>is</em> the architecture.</p>
+  </li>
+  <li>
+    <h4>Every feature serves sovereignty, resilience, or both.</h4>
+    <p>Features that serve neither — convenience features that don't compromise these but also don't strengthen them — are candidates for cutting. The stack is large; the principles are what keep it coherent. <strong>When in doubt, cut.</strong></p>
+  </li>
+  <li>
+    <h4>All authority flows downstream from a human-issued root.</h4>
+    <p>No agent, no tool, no consumer holds capabilities that don't trace, through cryptographic attenuation, to a Grant a human signed. The fabric's authority graph is rooted in humans, end of. Agents derive their capabilities from humans; humans never derive theirs from agents. This is the principle that holds the architecture together in the agent era — without it, the fabric is "anyone can call the API"; with it, even compromised agents are bounded by what humans authorized.</p>
+  </li>
+</ol>
+
+<!-- ================ NON-NEGOTIABLES ================ -->
+<section class="section-head" id="non-negotiables">
+  <div class="section-eyebrow">Part Fifteen · Non-negotiables</div>
+  <h2 class="section-title">The <em>operational</em> consequences</h2>
+  <p class="section-intro">These constraints define the private mesh. They are the operational consequences of the principles. Anything that violates them is not the private mesh.</p>
+</section>
+
+<div class="prose">
+  <ol>
+    <li><strong>Designed for continuous, asynchronous, partial failure.</strong> Power cuts, intermittent connectivity, multi-device partitions are normal operating conditions, not error conditions. All primitives are local-first; all network operations are queued; all state is eventually consistent.</li>
+    <li><strong>No NakliTechie-operated server in the critical path.</strong> Cloudflare, NetBird coordination, the user's anchor — all are user-chosen infrastructure. NakliTechie ships code, not service.</li>
+    <li><strong>No account on NakliTechie's side, ever.</strong> Identity is the user's own keys, full stop.</li>
+    <li><strong>No telemetry. No phone-home. No analytics.</strong> The stack does not know who its users are. Gleam telemetry stays within the user's fleet.</li>
+    <li><strong>All crypto happens on the client.</strong> Transports see ciphertext. Always.</li>
+    <li><strong>BYOK everywhere — credentials never persist in stack-owned storage.</strong> Cloudflare credentials, NetBird auth, LLM API keys, third-party API keys. Held in the FIF (encrypted at rest), decrypted in memory per session, forgotten on close.</li>
+    <li><strong>Append-only event-sourced data model.</strong> Mutations are events appended to a log; current state is a projection.</li>
+    <li><strong>Loss of all FIF copies + loss of all paths to reconstruct the key = loss of access.</strong> No NakliTechie recovery service. The user is sovereign and bears the responsibility. The fabric provides the architecture for the user to choose their own resilience model.</li>
+    <li><strong>Tool data is namespaced and grant-gated.</strong> Tools cannot read each other's data without explicit user-issued grants.</li>
+    <li><strong>The Transport Protocol is the spec.</strong> No single implementation is canonical. Multiple implementations are first-class.</li>
+    <li><strong>Local-first inference is the default.</strong> Remote BYOK is a fallback for tasks the anchor can't handle. The user's data does not leave their fleet unless the user explicitly opted into a remote provider for that specific task.</li>
+    <li><strong>The mesh layer is optional but not exotic.</strong> Users who already have Tailscale or similar use it. Users without one can adopt the NakliTechie wrapper with one tap. The fabric does not assume the mesh exists, but its existence makes everything better.</li>
+    <li><strong>Complexity is hidden by default, visible on demand.</strong> Power users see operation queues, freshness indicators, sync status, error states. Dragged-along family members see "open app, use app." Both audiences are first-class; defaults serve the latter while the former always has access to the truth.</li>
+    <li><strong>All capability traces to a human-issued root Grant.</strong> Every operation a tool, agent, or any consumer performs derives — through cryptographic attenuation — from a Grant a human signed. The fabric's authority graph has humans at every root. There are no exceptions; there is no "system-issued" Grant; there is no service-account model that bypasses this.</li>
+    <li><strong>Grant enforcement is server-side at every transport.</strong> Origin headers do not gate access. Client-side checks do not gate access. Only server-side macaroon verification gates access. This is enforced uniformly across the Go Hub, the Cloudflare Worker, the Local Network transport, and any future implementation. The conformance test suite includes adversarial cases.</li>
+    <li><strong>Idempotency keys travel with every operation that has side effects.</strong> Bridge calls, yes. Agent operations of any kind, yes. The keys are a reliability property for humans (Hook 4) and a security property under agent use — they bound the blast radius of a compromised or prompt-injected agent.</li>
+  </ol>
+</div>
+
+<!-- ================ ROADMAP ================ -->
+<section class="section-head" id="roadmap">
+  <div class="section-eyebrow">Part Sixteen · Roadmap</div>
+  <h2 class="section-title">Four <em>phases</em>, twelve months</h2>
+  <p class="section-intro">Three-person team with AI assistants. Each phase has a proof-of-life artifact; gates between phases are strict.</p>
+</section>
+
+<div class="prose">
+  <h3>Phase 1: Foundation (months 1-3)</h3>
+  <p><strong>Goals:</strong> Fabric protocol spec locked. Identity, Grant, Vault, Sync, History primitives implemented with all six failure-model hooks. Three reference transports (Go Hub, Cloudflare Worker, Local Network) shipped and conformance-tested. Fabric SDKs in JavaScript and Go. Reference CLI consumer ships. FIF format finalized with layered envelope. Shared list tool built and used daily by Bhai + son + brother.</p>
+
+  <p><strong>Artifacts:</strong></p>
+  <ul>
+    <li><code>fabric-spec-001-v1.0.md</code> — full protocol spec</li>
+    <li><code>fabric-sdk-js</code> — TypeScript/JavaScript library for browser consumers</li>
+    <li><code>fabric-sdk-go</code> — Go library for native binaries, daemons, the Hub itself, and the CLI</li>
+    <li><code>nakli-hub</code> — Go binary, self-hostable transport</li>
+    <li><code>nakli-cf-worker</code> — Cloudflare Worker reference implementation</li>
+    <li><code>nakli-local</code> — Local Network (mDNS) reference implementation</li>
+    <li><code>nakli-cli</code> — reference CLI consumer (Go, on top of fabric-sdk-go)</li>
+    <li><code>nakli-conformance</code> — test suite for any Transport or SDK implementation</li>
+    <li>The shared list tool (name TBD)</li>
+    <li>Documentation for tool authors</li>
+  </ul>
+
+  <h3>Phase 2: Local-first stack (months 4-6)</h3>
+  <p><strong>Goals:</strong> Anchor install script. Local inference daemon with MLX + llama.cpp routing. LLM primitive shipped with full local-first routing. NetBird-wrapper mesh layer bootstrapped. Gleam integration.</p>
+
+  <p><strong>Artifacts:</strong></p>
+  <ul>
+    <li><code>nakli-anchor-installer</code> — curl|bash installer for Apple Silicon (x86 Linux soon after)</li>
+    <li><code>nakli-llm-server</code> — OpenAI-compatible local inference daemon with engine routing</li>
+    <li><code>nakli-mesh</code> — NetBird wrapper with NakliTechie setup UX</li>
+    <li>LLM primitive in the fabric SDK</li>
+    <li>Gleam adaptations for private mesh observability</li>
+    <li>Migration playbook for existing portfolio tools (optional adoption)</li>
+  </ul>
+
+  <h3>Phase 3: Bridge and breadth (months 7-9)</h3>
+  <p><strong>Goals:</strong> Bridge primitive shipped. Reference adapters for common services. Second and third fabric-native consumer tools. Documentation polish. External tool authors can build.</p>
+
+  <p><strong>Artifacts:</strong></p>
+  <ul>
+    <li>Bridge primitive in the fabric SDK</li>
+    <li>Reference adapters for: CourtListener, archive.org, banking APIs, Google Drive, GitHub, LLM provider APIs as Bridge endpoints</li>
+    <li>Second consumer tool — likely a fabric-native Mehfil or Mahalla reimagining</li>
+    <li>Third consumer tool — Bhai's choice from the running ideas list</li>
+    <li>External tool author docs</li>
+  </ul>
+
+  <h3>Phase 4: Maturity and ecosystem (months 10-12+)</h3>
+  <p><strong>Goals:</strong> Existing portfolio tools migrate at their own pace. External contributors arrive. Distributed FIF (Shamir, device-quorum) ships. Optional managed Relay tier launched. Public communication of the private mesh thesis.</p>
+
+  <p><strong>Artifacts:</strong></p>
+  <ul>
+    <li>v1.x FIF envelope types (Shamir, device-quorum, social-recovery)</li>
+    <li>Native package installers (.pkg, .deb, .rpm) — Decision 10 deferred items</li>
+    <li>Tart/Lima VM image alternative</li>
+    <li>Optional NakliTechie-hosted Hub tier</li>
+    <li>Public Karpathy-style blog post / writeup</li>
+    <li>Open call for external tool authors</li>
+  </ul>
+
+  <h3>Phase 5+ (sketched, not committed)</h3>
+  <ul>
+    <li>Cluster-distributed inference (multiple anchors pooled via Thunderbolt 5)</li>
+    <li>Federated identity for households or small teams (multiple users on one anchor)</li>
+    <li>BLE and NFC pairing</li>
+    <li>Swift-native fabric SDK</li>
+    <li>Public capability format proposal for cross-author tools</li>
+  </ul>
+</div>
+
+<!-- ================ RISKS ================ -->
+<section class="section-head" id="risks">
+  <div class="section-eyebrow">Part Seventeen · Risk Register</div>
+  <h2 class="section-title">What could <em>go wrong</em></h2>
+  <p class="section-intro">Each risk is named with the mitigation. None of them is reason not to start.</p>
+</section>
+
+<div class="prose">
+  <ul>
+    <li><strong>Risk: protocol churn during development.</strong> Three people building in parallel against an evolving spec will diverge. <em>Mitigation:</em> spec freeze gates per phase. Once a primitive's spec is locked, only conformance tests change; implementations stabilize.</li>
+    <li><strong>Risk: maximalist scope eats focus.</strong> Seven primitives, three transports, a mesh wrapper, an inference daemon, install scripts, observability integration. <em>Mitigation:</em> strict phase gates. Phase 1 must ship before Phase 2 starts. The shared list tool is the proof-of-life for Phase 1.</li>
+    <li><strong>Risk: failure model is hard to get right.</strong> Local-first, idempotent, eventually-consistent systems are famously easy to get wrong. <em>Mitigation:</em> the six hooks are explicit v1.0 requirements; conformance tests for each. The shared list tool stresses the failure model from day one.</li>
+    <li><strong>Risk: the anchor doesn't materialize for users.</strong> The thesis assumes the hardware becomes common. If it doesn't, the stack degrades to "fabric + Cloudflare Worker + Local Network" which is still useful but loses much of the strategic thrust. <em>Mitigation:</em> every layer must be useful independently.</li>
+    <li><strong>Risk: capability design tarpit.</strong> <em>Mitigation:</em> macaroons are picked. The fabric uses them with discipline.</li>
+    <li><strong>Risk: mesh-layer wrapper becomes a quagmire.</strong> NetBird is mature; wrapping it in friendly UX is moderate work. Trying to build a Tailscale-equivalent from scratch is years. <em>Mitigation:</em> wrap, don't rebuild.</li>
+    <li><strong>Risk: three-person team produces five-person divergence.</strong> <em>Mitigation:</em> Bhai owns the spec; agents implement to spec; son and brother work on bounded modules with clear interfaces.</li>
+    <li><strong>Risk: LLM landscape shifts under us.</strong> Local inference engines evolve fast. <em>Mitigation:</em> the LLM primitive abstracts over the engine. <code>nakli-llm-server</code> is replaceable. The fabric talks to it via an OpenAI-compatible API.</li>
+    <li><strong>Risk: power-user-and-family dual audience tension.</strong> <em>Mitigation:</em> default hidden, visible on demand. Defaults must serve the family member; depths must be there for the power user.</li>
+  </ul>
+</div>
+
+<!-- ================ SUCCESS ================ -->
+<section class="section-head" id="success">
+  <div class="section-eyebrow">Part Eighteen · What Success Looks Like</div>
+  <h2 class="section-title">Markers, <em>not metrics</em></h2>
+  <p class="section-intro">Not a growth play. Not a Tailscale-replacement. Not cloud-replacement. Not enterprise. Just a coherent platform that compounds.</p>
+</section>
+
+<div class="prose">
+  <h3>End of Phase 1</h3>
+  <ul>
+    <li>Fabric SDK real and tested</li>
+    <li>Three reference Hub implementations conform to the spec</li>
+    <li>Shared list tool in daily use by Bhai + at least one other family member</li>
+    <li>An external tool author could read the docs and start building</li>
+  </ul>
+
+  <h3>End of Phase 2</h3>
+  <ul>
+    <li>Anchor install script real — Bhai's M4 Max Studio runs it as the reference deployment</li>
+    <li>Local inference happens; LLM primitive routes correctly</li>
+    <li>Mesh-layer wrapper live; phone-to-anchor works over cellular</li>
+    <li>Gleam reports on the live private mesh</li>
+  </ul>
+
+  <h3>End of Phase 3</h3>
+  <ul>
+    <li>Bridge live; multiple external services accessible via fabric grants</li>
+    <li>Three fabric-native tools shipped</li>
+    <li>Documentation good enough that a stranger can build a tool</li>
+  </ul>
+
+  <h3>End of Phase 4</h3>
+  <ul>
+    <li>Distributed FIF ships; real users have set up Shamir or device-quorum recovery</li>
+    <li>Private Mesh thesis publicly articulated</li>
+    <li>At least one external tool author has shipped</li>
+    <li>Clear monetization path (optional managed tier) live without compromising sovereignty</li>
+    <li>Portfolio is no longer "tools that share aesthetics" — it's "a sovereign personal computing platform"</li>
+  </ul>
+</div>
+
+<div class="callout">
+  <div class="callout-label">What success does not look like</div>
+  <p style="margin: 0;">Lots of users (not a growth play). Tailscale-replacement (the mesh wrapper is for NakliTechie users, not a market entrant). Cloud-services-replacement (the anchor doesn't try to be AWS). Enterprise adoption (zero interest in this direction).</p>
+</div>
+
+<!-- ================ DECISIONS ================ -->
+<section class="section-head" id="decisions">
+  <div class="section-eyebrow">The Decisions Log</div>
+  <h2 class="section-title">Every <em>locked</em> decision, with rationale</h2>
+  <p class="section-intro">A running record. Each decision has been re-examined under the failure-model lens. Notes added where the review surfaced refinements.</p>
+</section>
+
+<div id="decisions-container"></div>
+
+<!-- ================ HISTORY ================ -->
+<section class="section-head" id="history">
+  <div class="section-eyebrow">Reference</div>
+  <h2 class="section-title">Decision <em>history</em></h2>
+  <p class="section-intro">Chronological record of when each decision was locked, revised, or deferred.</p>
+</section>
+
+<div class="prose">
+  <table class="history-table">
+    <thead>
+      <tr><th>Revision</th><th>Decision</th><th>Status</th></tr>
+    </thead>
+    <tbody id="history-tbody"></tbody>
+  </table>
+</div>
+
+<script>
+// ============ Decision data ============
+const decisions = [
+  {
+    id: 'D1',
+    category: 'capability',
+    title: 'Capability token format',
+    status: 'locked',
+    resolution: 'Macaroons',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>Mature (12+ years), well-understood, libraries exist in every language</li>
+        <li>Bearer tokens with attenuation via caveats — exactly what the fabric needs</li>
+        <li>Third-party caveats support delegated revocation checks</li>
+        <li>Wire format simple enough that an agent can implement encode/decode reliably without crypto risk</li>
+      </ul>
+      <p class="section-label">Alternatives considered</p>
+      <ul>
+        <li><strong>UCAN</strong> — modern, DID-based, designed for this use case. Rejected: smaller ecosystem, more moving parts (DIDs add an identity model on top of keys), and macaroons are sufficient at personal-fabric scale.</li>
+        <li><strong>Custom format</strong> — rejected. Designing crypto is where projects die.</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Holds. Macaroons verify offline. Caveats evaluated locally. No verification server required. Revocation-list caveat needs History reachability, but stale History is acceptable (bounded staleness, visible to user).
+      </div>
+    `
+  },
+  {
+    id: 'D2',
+    category: 'capability',
+    title: 'Cross-origin identity model',
+    status: 'locked',
+    resolution: 'Multi-origin via user-owned Fabric Identity File (FIF) with layered envelope',
+    body: `
+      <p class="section-label">Rationale</p>
+      <p>Original framings (single origin / per-tool origin with postMessage bridge) both leashed tools to NakliTechie's hosting. The portfolio's defining shape is "download the HTML, run it anywhere — file://, intranet, your domain, my domain." A user-held FIF makes the fabric work at any origin without any "fabric origin" concept.</p>
+      <p class="section-label">FIF structure</p>
+      <p>Layered envelope:</p>
+      <ul>
+        <li><strong>Outer layer</strong> declares how to derive the decryption key</li>
+        <li><strong>Inner layer</strong> holds identity material (keys, transport configs, grants, optional cache)</li>
+        <li>v1.0 ships <code>passphrase-only</code> envelope type</li>
+        <li>v1.x can add <code>shamir-shares</code>, <code>device-quorum</code>, <code>social-recovery</code> without changing the inner format</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Holds and strengthens. FIF is a local file — works offline. Layered envelope means v1.x can add distributed-recovery options without breaking v1.0 FIFs. Hooks for distributed FIF are present from day one.
+      </div>
+    `
+  },
+  {
+    id: 'D3',
+    category: 'capability',
+    title: 'Conflict semantics for concurrent writes',
+    status: 'locked',
+    resolution: 'Fabric provides ordered event delivery; tools own merge semantics',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>Fabric stays unopinionated about data shape</li>
+        <li>Matches existing portfolio (Tijori, Bahi, Stance, VaultMind are all event-sourced) without forcing future tools</li>
+        <li>Keeps fabric responsibility crisp — transport and ordering, not data semantics</li>
+        <li>A separate <code>fabric-merge-helpers</code> library provides common patterns (append-union, last-write-wins-per-key) for tools that want them</li>
+      </ul>
+      <p class="section-label">Alternatives considered</p>
+      <ul>
+        <li><strong>Option A</strong> — Fabric defines one merge model. Rejected as too opinionated.</li>
+        <li><strong>Option C</strong> — Fabric provides multiple modes, tools pick. Rejected as duplicating cost without enough benefit.</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Strengthens. The ordered-delivery contract is explicitly the five CRDT-shaped properties: idempotent, order-tolerant, resumable, symmetric, eventual.
+      </div>
+    `
+  },
+  {
+    id: 'D4',
+    category: 'capability',
+    title: 'Revocation semantics',
+    status: 'revised',
+    resolution: 'Per-grant choice: opportunistic refresh OR revocation list',
+    body: `
+      <p class="section-label">Original (v0.2)</p>
+      <p>Short expiry + refresh for session grants; revocation list for delegated grants.</p>
+      <p class="section-label">Revised (v0.3)</p>
+      <ul>
+        <li><strong>Opportunistic refresh</strong> — for grants on the user's own devices. Long-lived expiry (days/weeks). Holder refreshes opportunistically when network is available; under partition, existing grant keeps working. Network outage does <em>not</em> lock the user out of their own data.</li>
+        <li><strong>Revocation list</strong> — for delegated grants to other parties. Longer expiry, list-backed revocation. Vault checks list at use time; staleness is bounded and visible. Immediate revocation when list propagates; stale-list grace period accepted as a property of the system.</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Why revised</div>
+        Original "short expiry + refresh" framing assumed the holder could always reach the issuer. Under partition, this fails — the user's phone could lose access to their own data because home Wi-Fi is out. Revised so refresh is opportunistic, not gating. Session grants now survive partition.
+      </div>
+    `
+  },
+  {
+    id: 'D5',
+    category: 'transport',
+    title: 'Transport plurality',
+    status: 'revised',
+    resolution: 'Three reference implementations in v1.0; Transport Protocol is the spec',
+    body: `
+      <p class="section-label">Original (v0.2)</p>
+      <p>Two reference implementations in v1.0: Go Hub + Cloudflare Worker. Local Network deferred to v1.1.</p>
+      <p class="section-label">Revised (v0.3) — three implementations in v1.0</p>
+      <ul>
+        <li><strong>nakli-hub</strong> — Go binary, self-hosted (anchor, VPS, Pi, anywhere always-on)</li>
+        <li><strong>nakli-cf-worker</strong> — Cloudflare Worker reference, ~50-200 lines TypeScript, BYO R2</li>
+        <li><strong>nakli-local</strong> — Local Network (mDNS) reference, browser-native, no external service</li>
+      </ul>
+      <p>Multiple implementations can coexist in one user's setup. Conformance tests verify all implementations against the same spec.</p>
+      <p class="section-label">Sub-decision: Hub language</p>
+      <p>Go. Speed of execution, single binary, minimal dependencies, easy cross-compilation, mature ecosystem for server-side work.</p>
+      <div class="callout">
+        <div class="callout-label">Why Local Network was promoted</div>
+        It's the most failure-resilient transport (everything else can be down, this still works) and the most sovereign (no third party at any layer).
+      </div>
+    `
+  },
+  {
+    id: 'D5p',
+    category: 'transport',
+    title: 'Pairing UX',
+    status: 'locked',
+    resolution: 'Three mechanisms in v1.0 (QR, code, magic link); two deferred (BLE, NFC)',
+    body: `
+      <p class="section-label">v1.0 mechanisms</p>
+      <ul>
+        <li><strong>A. QR code</strong> — camera-based, works phone↔laptop and screen↔screen. Primary mechanism.</li>
+        <li><strong>B. Short numeric code</strong> — typed in, for when QR fails (lighting, broken camera, screen-to-screen on one device).</li>
+        <li><strong>C. Magic link</strong> — one-time URL, for distance pairing. Supports both internet-mediated and local-network-only modes.</li>
+      </ul>
+      <p class="section-label">v1.x deferred (documented, not built)</p>
+      <ul>
+        <li><strong>D. BLE proximity</strong> — best UX when devices are physically near; limited by browser BLE API support.</li>
+        <li><strong>E. NFC tap</strong> — smallest UX surface; limited to phones with NFC and browsers with NFC API support.</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        All three mechanisms must work offline-local where topology allows. Two devices on same Wi-Fi must be able to pair without any internet.
+      </div>
+    `
+  },
+  {
+    id: 'D6',
+    category: 'deployment',
+    title: 'First fabric-native consumer tool',
+    status: 'locked',
+    resolution: 'Shared list (groceries, todos, packing lists)',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>Multi-user pressure from day one — Bhai, son, brother editing the same household lists</li>
+        <li>Daily use is automatic; households need lists</li>
+        <li>Simple data model — items + tick states as events</li>
+        <li>Multi-origin works naturally — kitchen iPad, phone, laptops</li>
+        <li>Concurrent writes from different devices/users happen weekly — exactly the failure-model scenarios that need testing</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Near-perfect. Households genuinely go offline; family members genuinely edit lists concurrently; append-only with union merge handles the common case correctly.
+      </div>
+    `
+  },
+  {
+    id: 'D9',
+    category: 'transport',
+    title: 'Mesh-layer base',
+    status: 'locked',
+    resolution: 'Wrap NetBird',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li><strong>Ethos match.</strong> NetBird is BSD-3 open-source all the way down, including clients. No proprietary GUI pieces.</li>
+        <li><strong>Identity integration cleaner.</strong> NetBird's OIDC integration lets the fabric become the identity provider for the mesh.</li>
+        <li><strong>Designed for self-hosting from day one</strong> rather than being a self-hostable port of a centralized design.</li>
+      </ul>
+      <p class="section-label">Alternatives considered</p>
+      <ul>
+        <li><strong>Headscale</strong> — rejected. Relies on Tailscale clients, which have proprietary GUI on macOS/iOS.</li>
+        <li><strong>Build from raw WireGuard</strong> — rejected. Years of work re-solving solved problems.</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Mostly holds. NetBird's coordination plane is the one component that needs to be reachable for new peers to join; once joined, peers can talk directly even if coordination is down.
+      </div>
+    `
+  },
+  {
+    id: 'D10',
+    category: 'deployment',
+    title: 'Anchor installer format',
+    status: 'locked',
+    resolution: 'curl | bash in v1.0; signed packages and VM image deferred to v1.2',
+    body: `
+      <p class="section-label">v1.0</p>
+      <ul>
+        <li>One-line install: <code>curl https://naklitechie.com/private-mesh | sh</code></li>
+        <li>Script detects platform, downloads binaries, lays down launchd plists (macOS) or systemd units (Linux), starts services</li>
+        <li>User keeps existing OS install</li>
+        <li><code>--dry-run</code> flag for inspection</li>
+        <li><code>--uninstall</code> flag for clean removal</li>
+        <li>Versioned, signed (gpg signature alongside binary)</li>
+      </ul>
+      <p class="section-label">v1.2 (deferred)</p>
+      <ul>
+        <li>Signed native packages (.pkg, .deb, .rpm)</li>
+        <li>Tart/Lima VM image alternative</li>
+      </ul>
+      <p class="section-label">Rejected entirely</p>
+      <ul>
+        <li>Custom OS image / bootable installer — anchor is not dedicated hardware in practice</li>
+        <li>Docker-only deployment — Docker as user-visible dependency contradicts stack ethos</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D11',
+    category: 'deployment',
+    title: 'Local inference engine choice',
+    status: 'locked',
+    resolution: 'Routing layer over MLX + llama.cpp',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>The vision bet on x86 anchors (Strix Halo, DGX Spark, Framework). Apple-only would retroactively break that bet.</li>
+        <li>Apple Silicon reference platform: MLX is meaningfully faster (1.3–2×) than llama.cpp for supported models.</li>
+        <li>Routing layer is small (200–400 lines of Go) compared to building either integration alone.</li>
+        <li>Bhai's existing MLX porting work feeds directly into the anchor's high-performance path.</li>
+        <li>Forward compatibility: new engines (vLLM, exo) absorbable.</li>
+      </ul>
+      <p class="section-label">Concretely</p>
+      <p><code>nakli-llm-server</code> exposes one OpenAI-compatible API. Internally, a routing layer picks engine per model — MLX for supported models on Apple, llama.cpp for the long tail and non-Apple platforms.</p>
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Holds. Inference is inherently local; routing never needs network for local engines. Remote BYOK fails under network outage — expected.
+      </div>
+    `
+  },
+  {
+    id: 'D-FIF',
+    category: 'capability',
+    title: 'Distributed FIF / Shamir recovery',
+    status: 'deferred',
+    resolution: 'Hooks in v1.0; full feature in v1.x',
+    body: `
+      <p class="section-label">v1.0 backup model</p>
+      <ul>
+        <li>FIF is one encrypted file, kept on multiple devices</li>
+        <li>User keeps copies on all paired devices plus optionally cloud backup (iCloud, Dropbox — the file is encrypted), USB stick, etc.</li>
+        <li>FIF is small (kilobytes) — 5 copies is no burden</li>
+      </ul>
+      <p class="section-label">v1.x options (architecture supports, not built yet)</p>
+      <ul>
+        <li><code>shamir-shares</code> — K of N Shamir's Secret Sharing</li>
+        <li><code>device-quorum</code> — any K of N paired devices collectively unlock</li>
+        <li><code>social-recovery</code> — any K of N trusted contacts collectively unlock</li>
+      </ul>
+      <p class="section-label">Why deferral</p>
+      <ul>
+        <li>No users yet; building elaborate recovery prematurely is wrong</li>
+        <li>Multi-device FIF copies cover most realistic loss scenarios</li>
+        <li>Real loss events from real users will teach more than design speculation</li>
+        <li>Adding it later doesn't break anything because envelope is layered (see D2)</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D-Failure',
+    category: 'foundational',
+    title: 'Failure model as load-bearing',
+    status: 'locked',
+    resolution: 'The system is correct under continuous, asynchronous, partial failure',
+    body: `
+      <p>The internet was designed to route around failures. Power cuts, network partitions, dropped packets — the protocol assumes failure is normal. Then B2B SaaS centralized everything because central servers were easier to reason about for vendors who wanted to bill per seat. The private mesh restores the original property.</p>
+      <p><strong>Power cuts, ISP outages, the anchor rebooting, devices on cellular with intermittent signal, two devices both offline for a week and coming back with different states — none of this is an error condition. It's Tuesday.</strong></p>
+      <p class="section-label">Six v1.0 hooks</p>
+      <ol>
+        <li><strong>Operation queue</strong> — every primitive crossing a network boundary has a local queue with on-disk durability</li>
+        <li><strong>Causal ordering metadata</strong> — every event carries vector clocks or Lamport timestamps + device IDs</li>
+        <li><strong>Bounded staleness visibility</strong> — every Vault query returns data plus a freshness indicator</li>
+        <li><strong>Idempotency keys on Bridge calls</strong> — Bridge calls with side effects carry idempotency keys for safe retry. Under agent use (see D-Agents) this becomes a security property: a prompt-injected agent retrying without idempotency could amplify a single intended action into many; with idempotency, the amplification fails.</li>
+        <li><strong>Graceful degradation surface</strong> — SDK exposes "what's currently broken" to tools</li>
+        <li><strong>Conflict surface</strong> — Sync emits conflict events when two peers wrote in the same causal slot</li>
+      </ol>
+      <p class="section-label">Implications across all primitives</p>
+      <p>Every primitive that involves talking to anything beyond the current device must be local-first, idempotent, order-tolerant, resumable, symmetric, eventual.</p>
+    `
+  },
+  {
+    id: 'D-Queue',
+    category: 'foundational',
+    title: 'Queue visibility to users',
+    status: 'locked',
+    resolution: 'Hidden by default, visible on demand',
+    body: `
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>Power users want visibility — part of sovereignty is seeing what's happening</li>
+        <li>Family members dragged into the stack by power users want invisibility — defaults should serve them</li>
+        <li>Both audiences are first-class; design accommodates both via opt-in visibility</li>
+      </ul>
+      <p class="section-label">Implementation</p>
+      <ul>
+        <li>Tools render the default user experience without exposing queue/sync/freshness details</li>
+        <li>A fabric admin UI (accessible via a known path or settings menu) exposes the operation queue, pending operations, sync status, freshness per peer, error states</li>
+        <li>Tools can opt into showing badges or indicators when they want, but the default is silent operation</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">The dual-audience reality</div>
+        Early users will be power users who drag in close family. Defaults serve the family; depths serve the power user.
+      </div>
+    `
+  },
+  {
+    id: 'D-Origin',
+    category: 'capability',
+    title: 'Origin strategy and multi-origin guarantee',
+    status: 'locked',
+    resolution: 'First-party tools use per-tool subdomains; protocol is origin-neutral by design',
+    body: `
+      <p class="section-label">Four-point clarification</p>
+      <ol>
+        <li><strong>First-party tools use per-tool subdomains.</strong> Phase 1 shared list lives at <code>list.naklitechie.com</code>. Future first-party tools follow the same pattern.</li>
+        <li><strong>Tools at any origin work identically.</strong> <code>file://</code>, third-party domains, forks, self-hosted intranet, anywhere. The fabric does not depend on a specific origin. Mix-and-match across origins is a first-class property.</li>
+        <li><strong>Transports MUST accept requests from any origin</strong> and authorize via capability tokens, not Origin headers. Hub, Cloudflare Worker, and Local Network transports all return permissive CORS headers. <em>Under agent use (see D-Agents), this is not just protocol hygiene — it is the entire security perimeter.</em> Server-side Grant enforcement at every transport is the load-bearing security property; nothing else gates access.</li>
+        <li><strong>Tools MUST treat browser storage as cache, not authoritative.</strong> Vault (via transport) is the source of truth. Required by the failure model anyway.</li>
+      </ol>
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>Per-tool origin matches existing convention (zero churn for future adoption)</li>
+        <li>Storage isolation per tool is correct — cross-tool data sharing goes through fabric Grants</li>
+        <li>Origin-neutral protocol is required for the "mix and match" property the architecture promised</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D-Consumers',
+    category: 'foundational',
+    title: 'The fabric serves consumers of any shape',
+    status: 'locked',
+    resolution: 'Browser HTML is one consumer shape. Native binaries, daemons, CLIs, scripts, agents, devices are equally first-class.',
+    body: `
+      <p class="section-label">Five-point commitment</p>
+      <ol>
+        <li><strong>The fabric serves consumers of any shape.</strong> A consumer is any process that speaks the Fabric Protocol.</li>
+        <li><strong>The Fabric Protocol is language-neutral.</strong> HTTP/JSON wire format, documented capability tokens, documented FIF format.</li>
+        <li><strong>Reference SDKs in JavaScript and Go from v1.0.</strong> <code>fabric-sdk-js</code> for browser tools, <code>fabric-sdk-go</code> for binaries, daemons, the Hub itself, and the reference CLI.</li>
+        <li><strong>Phase 1 ships at least one non-browser reference consumer.</strong> The reference CLI consumes the fabric for command-line operations. Doubles as the operator surface for power-user features.</li>
+        <li><strong>The SDK is a convenience; the protocol is the contract.</strong> Anyone can write a fourth SDK (Swift, Rust, Python) by implementing the protocol against the conformance test suite.</li>
+      </ol>
+      <p class="section-label">Terminology distinction (matters for the spec)</p>
+      <ul>
+        <li><strong>Fabric Protocol</strong> — wire format, language-neutral, the spec</li>
+        <li><strong>Fabric SDK</strong> — language-specific library that implements the protocol</li>
+        <li><strong>Consumer</strong> — any process that uses the protocol</li>
+        <li><strong>Tool</strong> — a consumer with a user interface</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D-Brand',
+    category: 'deployment',
+    title: 'Launch face and branding',
+    status: 'locked',
+    resolution: 'NakliTechie studio brand; Private Mesh as named sub-product; tools lead the marketing',
+    body: `
+      <p class="section-label">Shape</p>
+      <ul>
+        <li><strong>NakliTechie remains the studio brand.</strong> The portfolio's accumulated equity stays.</li>
+        <li><strong>The portfolio remains "NakliTechie tools."</strong> Individual tool branding doesn't change.</li>
+        <li><strong>The Private Mesh is the architectural layer.</strong> Tools that consume the fabric are described as "built on NakliTechie Private Mesh" — a feature, not the primary pitch.</li>
+        <li><strong>Users can opt in by setting up the anchor</strong>, or use individual tools standalone without ever knowing the stack exists.</li>
+        <li><strong>The Karpathy-style blog post</strong> is where the stack gets its moment. Day-to-day, tools lead.</li>
+      </ul>
+      <p class="section-label">Rationale</p>
+      <ul>
+        <li>NakliTechie has equity worth compounding; new brand resets to zero</li>
+        <li>The architectural layer is real enough to deserve a name</li>
+        <li>But platforms don't sell themselves to users — tools do; the platform sells the tools, not vice versa</li>
+        <li>This shape allows the Private Mesh brand to graduate to more prominence later if momentum develops, or stay quiet infrastructure if not</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D-Monetization',
+    category: 'deployment',
+    title: 'Monetization path — managed Relay tier as convenience',
+    status: 'locked',
+    resolution: 'Optional managed tier sells convenience, not capability; specifics deferred to Phase 4',
+    body: `
+      <p class="section-label">Shape (locked now)</p>
+      <ul>
+        <li><strong>Managed tier is convenience, not capability.</strong> Anything the managed tier can do, the self-hosted setup can also do.</li>
+        <li><strong>What the managed tier likely provides:</strong> NakliTechie-operated Cloudflare Worker tier; one-tap setup vs deploying your own Worker; operational SLA, automatic updates, monitoring.</li>
+        <li><strong>What the managed tier does NOT do:</strong>
+          <ul>
+            <li>Hold the user's keys or plaintext (impossible by design)</li>
+            <li>Require an account that gates access to the user's own data</li>
+            <li>Provide features unavailable in the self-hosted version</li>
+            <li>Lock the user in — FIF and Vault contents portable</li>
+          </ul>
+        </li>
+        <li><strong>Principle 10 applies to monetization:</strong> every monetized feature must serve sovereignty, resilience, or both.</li>
+      </ul>
+      <p class="section-label">Deferred to Phase 4</p>
+      <ul>
+        <li>Pricing</li>
+        <li>Billing infrastructure (probably Stripe, but not committed)</li>
+        <li>Free tier threshold</li>
+        <li>Team/multi-user managed tiers</li>
+        <li>Whether the managed tier uses pooled infrastructure or BYO storage</li>
+      </ul>
+    `
+  },
+  {
+    id: 'D-Agents',
+    category: 'foundational',
+    title: 'Agents as principals, with derived authority',
+    status: 'locked',
+    resolution: 'Agents are first-class consumers AND principals with their own identity; they hold Grants from humans (or delegated from other agents under human-rooted chains); cryptographic attenuation is the security boundary',
+    body: `
+      <p>The portfolio was built for humans; the agent era is upending that. Without changing the architecture, several properties become load-bearing under agent use and must be locked explicitly.</p>
+
+      <p class="section-label">Seven-point commitment</p>
+
+      <ol>
+        <li><strong>Agents have their own keypairs.</strong> Distinct from device subkeys, distinct from user identity. When an agent acts, it acts as itself, holding Grants delegated from a human. The fabric records both the agent's signature and the Grant chain.</li>
+
+        <li><strong>Agent provisioning is a documented, vendor-neutral flow.</strong> Mint an agent identity, scope its Grants, optionally set an expiry on the agent itself (not just on individual Grants). The provisioning flow does not privilege any particular agent vendor; swapping from Claude Code to an open-source agent tomorrow should not require any fabric-level change.</li>
+
+        <li><strong>Macaroon attenuation is the security boundary, enforced server-side at every transport.</strong> An agent cannot mint a Grant of strictly greater scope than the Grant it currently holds. Transports must check this on every request; client-side enforcement is not sufficient. The conformance test suite includes adversarial cases — agent trying to use a Grant outside its namespace, agent trying to use an expired Grant, agent trying to delegate beyond its caveats.</li>
+
+        <li><strong>Bridge grants for side-effect operations can carry approval caveats.</strong> Grants for Bridge calls that send email, transfer money, post publicly, modify external systems support macaroon caveats including <code>requires-human-approval</code>, <code>max-N-per-window</code>, <code>only-to-domain</code>, <code>max-amount</code>. The fabric expresses these natively; transport implementations enforce them; the provisioning UX makes them legible at the moment the human is minting the Grant.</li>
+
+        <li><strong>All agent operations carry idempotency keys regardless of operation type.</strong> Hook 4 (idempotency on Bridge calls) is upgraded under agent use: every operation an agent performs, including Vault writes, carries an idempotency key. A prompt-injected agent retrying "append item" 50 times produces one item, not 50.</li>
+
+        <li><strong>All agent operations log to History with full provenance chain.</strong> Every entry identifies the agent's keypair, the Grant under which it acted, the Grant's parent, and so on to the human-issued root. Reads matter for audit, not just writes. The History query interface supports "show me all operations by agent X in window W" as a first-class query (not "fetch all, filter client-side").</li>
+
+        <li><strong>Agent retirement is a first-class operation.</strong> Revoke the agent's identity. The retirement event is appended to History. All Grants minted by or under that agent become unverifiable from the retirement timestamp forward. Existing History entries from before retirement remain verifiable (the retirement does not retroactively un-do history).</li>
+      </ol>
+
+      <p class="section-label">What the fabric does not solve</p>
+
+      <ul>
+        <li><strong>Prompt injection</strong> is an agent-level concern. The fabric cannot prevent an agent from being manipulated by adversarial inputs. What the fabric does is bound the consequences: tight Grant scope, approval caveats on side-effect operations, History audit, anomaly detection (v1.x).</li>
+        <li><strong>Anomaly detection</strong> is a v1.x feature, not v1.0. The architecture supports it (History is queryable, Grants are scoped, events carry provenance). The actual detection logic — pattern recognition, threshold tuning, alert UX — comes later, after real agent usage produces real patterns.</li>
+        <li><strong>Vendor-lock-in defense</strong> requires more than the fabric. The fabric stays open and vendor-neutral; the broader ecosystem's resilience depends on continued availability of open-source and self-hostable agent options. The fabric makes vendor-swap trivial; it cannot prevent the ecosystem from concentrating.</li>
+      </ul>
+
+      <p class="section-label">Rationale</p>
+
+      <ul>
+        <li>The architecture survives the agent era without structural change. The seven primitives are correct. The transport plane is correct. The failure model is correct.</li>
+        <li>But several properties that were "good hygiene" become "load-bearing security" under agent use. This decision locks them as non-negotiable rather than nice-to-have.</li>
+        <li>The macaroon-based Grant model was designed by Google researchers partly with delegated, attenuated, time-limited authorization in mind. It maps onto the agent-era requirements directly. We chose well in D1.</li>
+        <li>The CLI commitment (D-Consumers) is now load-bearing for a different reason than originally framed: it forces the protocol to be fully documented and structured, which is what agents need. The CLI is the human-readable view of the operations surface agents use directly.</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Failure-model review</div>
+        Aligned. Agent operations queue and retry under network failure like any other operation (Hook 1). Provenance metadata travels with events (Hook 2). Grant freshness is bounded and visible (Hook 3). Idempotency is now mandatory not optional (Hook 4). Agent operation failures surface in the degradation interface (Hook 5). Conflicts between concurrent agent operations are detectable (Hook 6).
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">Why now, not in v0.5</div>
+        D-Consumers in v0.5 named agents as first-class consumers but treated this as a multi-language SDK question. This decision treats it as a security question. The shift is the realization that "consumers" includes "consumers without eyes, who can be socially engineered through their inputs, who derive authority from humans." That deserves its own locked decision rather than living in D-Consumers' margins.
+      </div>
+    `
+  },
+  {
+    id: 'O2',
+    category: 'open',
+    title: 'Collaborator shaping',
+    status: 'open',
+    resolution: 'Open by design — resolves after fabric-spec-001-v1.0.md exists',
+    body: `
+      <p>What bounded modules does son own? What does brother own?</p>
+      <p class="section-label">Approach</p>
+      <ul>
+        <li>The spec will define natural module boundaries (transports, SDKs, primitives, consumers, mesh wrapper, conformance tests)</li>
+        <li>Once boundaries are real, a short conversation with Bhai + son + brother assigns ownership</li>
+        <li>Module interfaces are defined by the spec, so collaborators can work in parallel</li>
+      </ul>
+      <p class="section-label">Plausible module units (illustrative, not committing)</p>
+      <ul>
+        <li>A specific transport implementation</li>
+        <li>A specific SDK (the Go SDK; the CLI on top of it)</li>
+        <li>A specific primitive end-to-end (Identity + FIF; Bridge + adapters; LLM + routing)</li>
+        <li>A reference consumer (the shared list tool; the CLI)</li>
+        <li>The mesh wrapper as its own sub-project</li>
+        <li>Conformance test suites</li>
+      </ul>
+      <div class="callout">
+        <div class="callout-label">Not pending</div>
+        Anyone's input right now. Correctly waiting for the spec.
+      </div>
+    `
+  },
+];
+
+const history = [
+  { rev: 'Early', decision: 'D1 — Macaroons', status: 'locked' },
+  { rev: 'Early', decision: 'D2 — FIF cross-origin', status: 'locked' },
+  { rev: 'Early', decision: 'D3 — Tools own merge', status: 'locked' },
+  { rev: 'Early → v0.3', decision: 'D4 — Per-grant revocation', status: 'revised' },
+  { rev: 'Early → v0.3', decision: 'D5 — Transport plurality (2 → 3 impls)', status: 'revised' },
+  { rev: 'Early', decision: 'D6 — Shared list', status: 'locked' },
+  { rev: 'v0.2', decision: 'D5p — QR + code + link pairing', status: 'locked' },
+  { rev: 'v0.2', decision: 'D9 — NetBird wrap', status: 'locked' },
+  { rev: 'v0.2', decision: 'D10 — curl|bash installer', status: 'locked' },
+  { rev: 'v0.2', decision: 'D11 — MLX + llama.cpp routing', status: 'locked' },
+  { rev: 'v0.3', decision: 'D-FIF — Layered envelope, distributed deferred', status: 'deferred' },
+  { rev: 'v0.3', decision: 'D-Failure — Failure model load-bearing', status: 'locked' },
+  { rev: 'v0.3', decision: 'D-Queue — Hidden by default, visible on demand', status: 'locked' },
+  { rev: 'v0.5', decision: 'D-Origin — Per-tool subdomains, origin-neutral protocol', status: 'locked' },
+  { rev: 'v0.5', decision: 'D-Consumers — Multi-client first-class, JS+Go SDKs', status: 'locked' },
+  { rev: 'v0.5', decision: 'D-Brand — NakliTechie studio + Private Mesh sub-product', status: 'locked' },
+  { rev: 'v0.5', decision: 'D-Monetization — Managed tier as convenience', status: 'locked' },
+  { rev: 'v0.6', decision: 'Coherence pass — vision unified into single HTML, all sections aligned', status: 'locked' },
+  { rev: 'v0.7', decision: 'D-Agents — Agents as principals with derived authority', status: 'locked' },
+  { rev: 'v0.7', decision: 'Principle 11 — All authority flows downstream from a human-issued root', status: 'locked' },
+];
+
+// ============ Init after DOM ready ============
+function init() {
+
+// ============ Render decisions ============
+const decisionsContainer = document.getElementById('decisions-container');
+const navCategoryMap = {
+  foundational: 'nav-foundational',
+  capability: 'nav-capability',
+  transport: 'nav-transport',
+  deployment: 'nav-deployment',
+  open: 'nav-open',
+};
+const navData = { foundational: [], capability: [], transport: [], deployment: [], open: [] };
+
+decisions.forEach(d => {
+  const article = document.createElement('article');
+  article.className = 'decision';
+  article.id = 'decision-' + d.id;
+  article.dataset.cat = d.category;
+  article.dataset.search = (d.id + ' ' + d.title + ' ' + d.resolution + ' ' + d.body).toLowerCase();
+
+  article.innerHTML = `
+    <div class="decision-header">
+      <span class="decision-id">${d.id}</span>
+      <span class="decision-status status-${d.status}">${d.status}</span>
+    </div>
+    <h3 class="decision-title">${d.title}</h3>
+    <div class="decision-resolution">${d.resolution}</div>
+    <div class="decision-body">${d.body}</div>
+  `;
+  decisionsContainer.appendChild(article);
+
+  if (navData[d.category]) {
+    navData[d.category].push({ id: d.id, title: d.title, status: d.status });
+  }
+});
+
+// ============ Render nav ============
+Object.keys(navData).forEach(cat => {
+  const ul = document.getElementById(navCategoryMap[cat]);
+  if (!ul) return;
+  navData[cat].forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'nav-item';
+    li.dataset.decisionId = item.id;
+    li.innerHTML = `
+      <span class="dot ${item.status}"></span>
+      <span class="id">${item.id}</span>
+      <span>${item.title}</span>
+    `;
+    li.addEventListener('click', () => {
+      const target = document.getElementById('decision-' + item.id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      li.classList.add('active');
+    });
+    ul.appendChild(li);
+  });
+});
+
+// ============ Render history ============
+const historyTbody = document.getElementById('history-tbody');
+history.forEach(h => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${h.rev}</td>
+    <td>${h.decision}</td>
+    <td><span class="decision-status status-${h.status}">${h.status}</span></td>
+  `;
+  historyTbody.appendChild(tr);
+});
+
+// ============ Section nav (vision/principles) ============
+document.querySelectorAll('.nav-item[data-anchor]').forEach(item => {
+  item.addEventListener('click', () => {
+    const target = document.getElementById(item.dataset.anchor);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+  });
+});
+
+// ============ Theme toggle ============
+const themeToggle = document.getElementById('theme-toggle');
+themeToggle.addEventListener('click', () => {
+  const current = document.body.dataset.theme;
+  document.body.dataset.theme = current === 'light' ? 'dark' : 'light';
+  themeToggle.textContent = document.body.dataset.theme === 'light' ? '◑' : '◐';
+});
+
+// ============ Search ============
+const searchInput = document.getElementById('search');
+const noResults = document.getElementById('no-results');
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Cache full text of every searchable element
+const searchablePool = [];
+
+function buildSearchablePool() {
+  // Vision sections (each section-head + following prose/diagram/etc.)
+  document.querySelectorAll('.section-head').forEach(head => {
+    const anchor = head.id;
+    let text = head.textContent;
+    let node = head.nextElementSibling;
+    const blocks = [head];
+    while (node && !node.classList.contains('section-head')) {
+      blocks.push(node);
+      text += ' ' + node.textContent;
+      node = node.nextElementSibling;
+    }
+    searchablePool.push({ kind: 'vision-section', anchor, text: text.toLowerCase(), blocks });
+  });
+
+  // Decisions
+  document.querySelectorAll('.decision').forEach(d => {
+    searchablePool.push({ kind: 'decision', anchor: d.id, text: d.dataset.search, blocks: [d] });
+  });
+}
+
+buildSearchablePool();
+
+searchInput.addEventListener('input', (e) => {
+  const query = e.target.value.trim().toLowerCase();
+  let visibleCount = 0;
+
+  searchablePool.forEach(item => {
+    const matches = !query || item.text.includes(query);
+    item.blocks.forEach(b => {
+      b.classList.toggle('hidden', !matches);
+    });
+    if (matches) visibleCount++;
+  });
+
+  noResults.classList.toggle('show', visibleCount === 0 && query.length > 0);
+});
+
+// ============ Scroll spy ============
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      document.querySelectorAll('.nav-item').forEach(n => {
+        const matches = n.dataset.anchor === id || n.dataset.decisionId === id.replace('decision-', '');
+        n.classList.toggle('active', matches);
+      });
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+
+document.querySelectorAll('.section-head, .decision').forEach(el => {
+  if (el.id) observer.observe(el);
+});
+
+// ============ Keyboard ============
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+  }
+  if (e.key === 'Escape' && document.activeElement === searchInput) {
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input'));
+    searchInput.blur();
+  }
+});
+
+// Style for hidden blocks
+const style = document.createElement('style');
+style.textContent = '.hidden { display: none !important; }';
+document.head.appendChild(style);
+
+} // end init()
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+
+  </div>
+
+  <div class="no-results" id="no-results">No matches for your search.</div>
+
+  <footer class="footer">
+    <div>NakliTechie · Private Mesh · <em>v0.7</em></div>
+    <div>Press / to search · Esc to clear</div>
+  </footer>
+
+</main>
+
+<button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">◑</button>
+
+<!-- Content and script injected below -->
+</body>
+</html>

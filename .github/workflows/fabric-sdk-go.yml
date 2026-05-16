@@ -1,0 +1,20 @@
+name: fabric-sdk-go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'fabric-sdk-go/**'
+      - '.github/workflows/fabric-sdk-go.yml'
+  pull_request:
+    paths:
+      - 'fabric-sdk-go/**'
+      - '.github/workflows/fabric-sdk-go.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: ./fabric-sdk-go/smoke.sh

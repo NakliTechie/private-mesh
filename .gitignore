@@ -1,0 +1,54 @@
+# Build outputs
+/bin/
+/dist/
+/build/
+**/build/
+**/dist/
+*.exe
+*.o
+*.a
+
+# Go
+**/vendor/
+go.work.sum
+
+# JS / TS
+**/node_modules/
+**/.next/
+**/.turbo/
+.pnpm-store/
+*.tsbuildinfo
+
+# Cloudflare Wrangler
+**/.wrangler/
+**/.dev.vars
+
+# SQLite (Hub local data)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Coverage
+coverage/
+*.cover
+*.coverprofile
+
+# Local working files
+TODO.local.md
+SCRATCH.md

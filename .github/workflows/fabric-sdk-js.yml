@@ -1,0 +1,20 @@
+name: fabric-sdk-js
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'fabric-sdk-js/**'
+      - '.github/workflows/fabric-sdk-js.yml'
+  pull_request:
+    paths:
+      - 'fabric-sdk-js/**'
+      - '.github/workflows/fabric-sdk-js.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: ./fabric-sdk-js/smoke.sh

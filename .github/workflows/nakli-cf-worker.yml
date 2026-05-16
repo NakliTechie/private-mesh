@@ -1,0 +1,20 @@
+name: nakli-cf-worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nakli-cf-worker/**'
+      - '.github/workflows/nakli-cf-worker.yml'
+  pull_request:
+    paths:
+      - 'nakli-cf-worker/**'
+      - '.github/workflows/nakli-cf-worker.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: ./nakli-cf-worker/smoke.sh

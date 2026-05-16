@@ -1,0 +1,20 @@
+name: nakli-local-bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nakli-local-bridge/**'
+      - '.github/workflows/nakli-local-bridge.yml'
+  pull_request:
+    paths:
+      - 'nakli-local-bridge/**'
+      - '.github/workflows/nakli-local-bridge.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: ./nakli-local-bridge/smoke.sh

@@ -1,0 +1,5 @@
+# Superseded spec versions live here.
+#
+# Per the v1.2 agent handoff (RESTART NOTICE), v1.0 specs would be archived here
+# when superseded by v1.1+. The initial v1.2 spec drop did not ship any v1.0
+# predecessors, so this directory is empty at the M0 checkpoint.

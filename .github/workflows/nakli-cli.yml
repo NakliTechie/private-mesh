@@ -1,0 +1,20 @@
+name: nakli-cli
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nakli-cli/**'
+      - '.github/workflows/nakli-cli.yml'
+  pull_request:
+    paths:
+      - 'nakli-cli/**'
+      - '.github/workflows/nakli-cli.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: ./nakli-cli/smoke.sh
