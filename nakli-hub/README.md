@@ -2,7 +2,7 @@
 
 Hub binary — the canonical Private Mesh transport. Runs on the user's anchor (a small always-on machine, typically self-hosted) and serves the fabric protocol over HTTP.
 
-**Status:** alpha (M2 phase 2b — full protocol surface implemented; vault read/write/list/subscribe, history with hash chain + verify, identity (principal + pair flow), grant (mint/verify/revoke), LLM/Bridge/Sync stubs, caveat enforcement (time / operation / namespace / nondelegatable / idempotency-required). Phase 2c remaining: `backup`/`restore`, systemd unit + launchd plist, `status`/`conformance` stubs, M2 close-out.)
+**Status:** alpha — **M2 complete.** All seven primitives implemented (vault, history, identity, grant, plus LLM/Bridge/Sync stubs honouring the forward-compat hooks); macaroon + idempotency middleware; caveat enforcement; `init` / `serve` / `backup` / `restore` / `status` / `conformance` / `version` subcommands; systemd unit + macOS launchd plist under `contrib/`. 23 in-process tests cover the protocol surface and the backup round-trip. Next milestone is **M3** — full 32-test conformance suite under `fabric-sdk-go/conformance/`, which also wires the deferred caveats (rate, max-amount, only-domain, requires-human-approval, discharge-from).
 
 ## Quick start
 
@@ -25,12 +25,15 @@ curl http://127.0.0.1:7842/fabric/v1/discover
 
 ## Subcommands
 
-| Command | Status |
+| Command | Notes |
 | --- | --- |
-| `init`    | M2a — generates `hub-identity.json`, runs migrations, writes `config.json` |
-| `serve`   | M2a — starts the HTTP server |
-| `version` | M2a |
-| `status`, `backup`, `restore`, `conformance`, `upgrade` | M2b/c |
+| `init`        | generates `hub-identity.json`, runs migrations, writes `config.json` |
+| `serve`       | starts the HTTP server |
+| `backup`      | writes a gzip-tar archive (manifest + config + identity + VACUUM'd SQLite + blobs) |
+| `restore`     | extracts an archive into a fresh data dir; runs SQLite `integrity_check` |
+| `status`      | curls `/fabric/v1/health` against the local Hub and pretty-prints |
+| `conformance` | stub — the 32-test suite lands at M3 in `fabric-sdk-go/conformance/` |
+| `version`     | prints binary + protocol version |
 
 ## Packages
 
@@ -130,12 +133,13 @@ JSON file at the path passed via `--config`. Defaults match the spec:
 
 A TOML pass may follow in Phase 2b once Bhai confirms config-format preference.
 
-## Operational notes (planned for Phase 2b)
+## Operational notes
 
-- systemd unit + macOS launchd plist
-- `nakli-hub backup` / `restore` for snapshot
-- `curl|bash` installer at M9 (per D10)
-- No telemetry, no analytics, no auto-update
+- systemd unit + macOS launchd plist live under [`contrib/`](contrib/). See [`contrib/README.md`](contrib/README.md) for installation steps.
+- `nakli-hub backup --config CFG --output PATH` snapshots the Hub. SQLite is captured via `VACUUM INTO` so the Hub may keep serving.
+- `nakli-hub restore --input PATH --data-dir DIR` extracts an archive, validates SQLite, and refuses non-empty destinations without `--force`.
+- `curl|bash` installer arrives at M9 (per D10). For now: `go install ./cmd/nakli-hub` or build manually.
+- No telemetry, no analytics, no auto-update.
 
 ## Security notes
 

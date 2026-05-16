@@ -1,0 +1,46 @@
+# systemd unit for nakli-hub. Install at /etc/systemd/system/nakli-hub.service
+# then `systemctl daemon-reload && systemctl enable --now nakli-hub`.
+#
+# Defaults assume:
+#   - binary at /usr/local/bin/nakli-hub
+#   - config at /etc/nakli-hub/config.json
+#   - data dir at /var/lib/nakli-hub (writable by user `nakli`)
+#   - dedicated user/group `nakli`
+# Adjust paths in this file rather than editing the binary's defaults.
+
+[Unit]
+Description=NakliTechie Fabric Hub
+Documentation=https://github.com/NakliTechie/private-mesh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nakli
+Group=nakli
+ExecStart=/usr/local/bin/nakli-hub serve --config /etc/nakli-hub/config.json
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# Logs go to journald via stdout/stderr.
+StandardOutput=journal
+StandardError=journal
+
+# Defense-in-depth: the Hub holds key material on disk; lock it down.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nakli-hub
+
+# Optional resource limits — uncomment + tune for the host's capacity.
+# LimitNOFILE=65536
+# MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

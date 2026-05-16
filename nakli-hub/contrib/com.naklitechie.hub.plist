@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for nakli-hub on macOS. Install at
+  ~/Library/LaunchAgents/com.naklitechie.hub.plist then:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.naklitechie.hub.plist
+    launchctl kickstart -k gui/$(id -u)/com.naklitechie.hub
+
+  Defaults assume:
+    - binary at /usr/local/bin/nakli-hub
+    - config at $HOME/Library/Application Support/nakli-hub/config.json
+    - logs at $HOME/Library/Logs/nakli-hub.log
+  Edit ProgramArguments / paths below to match your install.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.naklitechie.hub</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/nakli-hub</string>
+      <string>serve</string>
+      <string>--config</string>
+      <string>__USER_HOME__/Library/Application Support/nakli-hub/config.json</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+      <key>SuccessfulExit</key>
+      <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>__USER_HOME__/Library/Logs/nakli-hub.log</string>
+    <key>StandardErrorPath</key>
+    <string>__USER_HOME__/Library/Logs/nakli-hub.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>HOME</key>
+      <string>__USER_HOME__</string>
+    </dict>
+  </dict>
+</plist>
