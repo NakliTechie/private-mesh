@@ -1,0 +1,33 @@
+{
+  "description": "Shared test vectors for M1 cross-SDK interop. Both fabric-sdk-go and fabric-sdk-js read this file when running scripts/m1-interop.sh.",
+  "fif": {
+    "passphrase": "m1-interop-passphrase-2026",
+    "principal": {
+      "type": "human",
+      "id": "01JFXAMPLEPRINCIPALM10001",
+      "display_name": "M1 Interop Tester",
+      "created_at": "2026-05-16T12:00:00Z"
+    },
+    "root_keypair": {
+      "algorithm": "ed25519",
+      "public_key_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "private_key_hex": "22222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "macaroon": {
+    "root_key_hex": "deadbeefcafef00dba5eba11feedface0123456789abcdef0123456789abcdef",
+    "location": "https://hub.interop.example",
+    "identifier": {
+      "grant_id": "01JFXAMPLEGRANTM10000001",
+      "issued_at": "2026-05-16T12:00:00Z",
+      "issued_by_principal": "01JFXAMPLEPRINCIPALM10001",
+      "issued_by_keypair_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "scope": {
+        "primitive": "vault",
+        "namespace": "list",
+        "operations": ["read", "write"]
+      }
+    },
+    "caveats": ["time < 2027-01-01T00:00:00Z", "operation in [read, write]"]
+  }
+}

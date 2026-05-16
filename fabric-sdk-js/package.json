@@ -1,0 +1,21 @@
+{
+  "name": "@naklitechie/fabric-sdk",
+  "version": "0.1.0-alpha.0",
+  "description": "JavaScript SDK for the NakliTechie Private Mesh fabric protocol.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec 'test/**/*.test.js'",
+    "smoke": "./smoke.sh"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.0.0",
+    "hash-wasm": "^4.11.0",
+    "macaroon": "^3.0.4",
+    "ulidx": "^2.4.0"
+  }
+}
