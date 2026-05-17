@@ -1,0 +1,27 @@
+name = "nakli-fabric"
+main = "src/worker.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# R2 + KV are required bindings. The dev runtime simulates both locally; the
+# deploy command swaps in real Cloudflare-managed resources by id (see README).
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "nakli-fabric-blobs"
+
+[[kv_namespaces]]
+binding = "STATE"
+id = "00000000000000000000000000000000"
+
+[vars]
+PROTOCOL_VERSION = "naklimesh/1.0"
+MAX_EVENT_SIZE_BYTES = "1048576"
+IDEMPOTENCY_RETENTION_SECONDS = "86400"
+DISCHARGE_TTL_SECONDS = "86400"
+LOG_LEVEL = "info"
+# CONFORMANCE_MODE=true seeds the retired-agent principal at startup so the
+# 32-test conformance suite can drive test 30. Leave unset in production.
+CONFORMANCE_MODE = "false"
+
+# HUB_ID, HUB_PUBLIC_KEY, HUB_PRIVATE_KEY, MACAROON_ROOT_KEY are set as
+# secrets (production) or in .dev.vars (local). All base64.
