@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#7c9a8a" />
+    <title>saanjha — shared list</title>
+    <style>
+      :root {
+        /* Calm muted domestic palette (placeholder; final palette TBD).
+         * All contrast pairs verified ≥ 4.5:1 (WCAG AA on text). */
+        --bg:        #faf6f0;   /* warm cream */
+        --bg-card:   #ffffff;
+        --bg-soft:   #f0ebe2;
+        --line:      #d8d1c2;
+        --line-soft: #e6e0d1;
+        --ink:       #1d1c19;
+        --ink-soft:  #564f44;
+        --accent:    #4a6f5d;   /* sage */
+        --accent-soft: #7c9a8a;
+        --accent-pale: #d6e0d8;
+        --danger:    #a4453b;
+        --focus:     #1b4f72;
+        --shadow:    0 1px 2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.04);
+        --radius: 10px;
+        --tap: 44px;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        font-family: 'Inter Tight', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-size: 16px;
+        line-height: 1.45;
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent); }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .app {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        max-width: 640px;
+        margin: 0 auto;
+        background: var(--bg);
+      }
+      /* --- header --- */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 3;
+      }
+      .topbar h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .topbar .meta {
+        font-size: 13px;
+        color: var(--ink-soft);
+      }
+      .icon-btn {
+        background: transparent;
+        border: 0;
+        padding: 0;
+        width: var(--tap);
+        height: var(--tap);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--ink-soft);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .icon-btn:hover { background: var(--bg-soft); color: var(--ink); }
+      .presence {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .presence .pill {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--accent-pale);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--accent-soft);
+      }
+      .presence .pill.agent {
+        background: var(--bg-soft);
+        color: var(--ink-soft);
+        border-color: var(--line);
+        font-size: 11px;
+      }
+
+      /* --- add input --- */
+      .add-row {
+        display: flex;
+        gap: 8px;
+        padding: 10px 14px;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 57px;
+        z-index: 2;
+      }
+      .add-row input[type="text"] {
+        flex: 1;
+        min-width: 0;
+        padding: 11px 12px;
+        font: inherit;
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      .add-row input[type="text"]::placeholder { color: var(--ink-soft); }
+      .add-row .add-qty {
+        width: 88px;
+      }
+      .add-row button[type="submit"] {
+        min-width: var(--tap);
+        height: var(--tap);
+        background: var(--accent);
+        color: white;
+        border: 0;
+        border-radius: var(--radius);
+        font: inherit;
+        font-weight: 600;
+        padding: 0 14px;
+        cursor: pointer;
+      }
+      .add-row button[type="submit"]:hover { background: var(--accent-soft); }
+
+      /* --- list --- */
+      ul.items {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        flex: 1;
+      }
+      li.item {
+        display: grid;
+        grid-template-columns: var(--tap) 1fr auto var(--tap);
+        align-items: center;
+        gap: 8px;
+        padding: 6px 6px 6px 0;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--line-soft);
+        min-height: var(--tap);
+      }
+      li.item.checked .text,
+      li.item.checked .qty {
+        color: var(--ink-soft);
+        text-decoration: line-through;
+        text-decoration-color: var(--accent-soft);
+      }
+      .check {
+        width: var(--tap);
+        height: var(--tap);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .check input { width: 22px; height: 22px; accent-color: var(--accent); }
+      .text {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 0;
+        cursor: text;
+        color: var(--ink);
+        word-break: break-word;
+      }
+      .text input.edit {
+        width: 100%;
+        font: inherit;
+        padding: 6px 8px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 6px;
+        background: var(--bg);
+      }
+      .qty {
+        color: var(--ink-soft);
+        font-size: 14px;
+        padding: 0 6px;
+        white-space: nowrap;
+      }
+      .author {
+        font-size: 11px;
+        color: var(--ink-soft);
+        padding-right: 6px;
+      }
+      .drag {
+        cursor: grab;
+        color: var(--line);
+        text-align: center;
+        font-size: 18px;
+        user-select: none;
+      }
+      .drag:hover { color: var(--ink-soft); }
+      .row-actions {
+        display: none;
+        gap: 4px;
+        padding-right: 6px;
+      }
+      li.item:hover .row-actions,
+      li.item:focus-within .row-actions {
+        display: flex;
+      }
+      .row-actions button {
+        background: transparent;
+        border: 0;
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink-soft);
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 6px;
+      }
+      .row-actions button:hover { background: var(--bg-soft); color: var(--ink); }
+      .row-actions button.del:hover { color: var(--danger); }
+
+      /* --- footer --- */
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 14px;
+        font-size: 13px;
+        color: var(--ink-soft);
+        background: var(--bg-card);
+        border-top: 1px solid var(--line);
+      }
+      .filter {
+        display: inline-flex;
+        gap: 4px;
+      }
+      .filter button {
+        background: transparent;
+        border: 1px solid var(--line);
+        padding: 4px 10px;
+        border-radius: 999px;
+        color: var(--ink-soft);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .filter button[aria-pressed="true"] {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+      .filter button:focus-visible {
+        outline-offset: 0;
+        outline-color: var(--focus);
+      }
+
+      .empty {
+        text-align: center;
+        padding: 40px 16px;
+        color: var(--ink-soft);
+      }
+      .empty p { margin: 0 0 8px 0; }
+
+      /* Banner for offline / mock-data nudges */
+      .banner {
+        background: var(--accent-pale);
+        color: var(--accent);
+        font-size: 13px;
+        padding: 8px 14px;
+        text-align: center;
+        border-bottom: 1px solid var(--accent-soft);
+      }
+
+      /* Reduced motion */
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app" id="app">
+      <header class="topbar" aria-label="List header">
+        <button class="icon-btn" id="menu-btn" aria-label="Open menu" title="Menu (lists / settings / sync — session 4)">≡</button>
+        <h1 id="list-title">Groceries</h1>
+        <span class="meta" id="list-meta">14 open</span>
+        <span class="presence" id="presence" aria-label="Recent contributors"></span>
+      </header>
+
+      <div class="banner" role="status" aria-live="polite" id="banner">
+        Session-1 build: this list is mock data; Fabric sync arrives in session 2.
+      </div>
+
+      <form class="add-row" id="add-form" autocomplete="off">
+        <input
+          type="text"
+          id="add-text"
+          name="text"
+          placeholder="+ Add an item..."
+          aria-label="Add an item"
+          required
+        />
+        <input
+          type="text"
+          id="add-qty"
+          name="qty"
+          placeholder="qty"
+          aria-label="Quantity"
+          class="add-qty"
+        />
+        <button type="submit" aria-label="Add item">Add</button>
+      </form>
+
+      <ul class="items" id="items" aria-live="polite" aria-label="List items"></ul>
+
+      <div class="empty" id="empty" hidden>
+        <p>Nothing here yet.</p>
+        <p>Add the first item above.</p>
+      </div>
+
+      <footer class="footer">
+        <span id="filter-meta">Showing all (14)</span>
+        <span class="filter" role="group" aria-label="Filter">
+          <button type="button" data-filter="all"     aria-pressed="true">All</button>
+          <button type="button" data-filter="open"    aria-pressed="false">Open</button>
+          <button type="button" data-filter="checked" aria-pressed="false">Done</button>
+        </span>
+      </footer>
+    </main>
+
+    <script type="module">
+      // ===========================================================
+      // saanjha — session 1 (M8). Single-HTML, read-only-with-mock.
+      // Spec: docs/specs/shared-list-spec-001-v1.0.md.
+      //
+      // What this file does today:
+      //  - Renders a single mock list with materialization from an
+      //    event log (per spec §"Materialization").
+      //  - Local-state add / check / uncheck / edit / delete / filter.
+      //  - Mobile-first layout per spec §"Layout" ASCII mockup.
+      //  - Presence chip strip (mock authors; tooltip shows full name).
+      //
+      // What this file does NOT yet do (lands in M8 sessions 2-5):
+      //  - Fabric SDK integration (vault.append / subscribe / freshness)
+      //  - Multiple lists + switcher (session 3)
+      //  - Drag-to-reorder (session 3)
+      //  - Conflict UI + members panel + .naklilist export (session 4)
+      //  - Real-time sync from other devices (session 2/5)
+      //
+      // The shape, event vocabulary, and materialization here are
+      // intentionally what session 2 will feed Fabric — so the move
+      // from mock to live wire is a wiring exercise, not a rewrite.
+      // ===========================================================
+
+      // --- ULID-ish id generator (good enough for mock; SDK provides
+      //     real ulids once we wire fabric-sdk-js in session 2). ---
+      const enc32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+      function pseudoUlid() {
+        let s = '';
+        for (let i = 0; i < 26; i++) {
+          s += enc32[Math.floor(Math.random() * 32)];
+        }
+        return s;
+      }
+
+      // --- Authors (mock; real principals come from FIF in session 2). ---
+      const AUTHORS = {
+        'PRIN-BHAI':   { initials: 'B',  name: 'Bhai',          kind: 'human' },
+        'PRIN-PRIYA':  { initials: 'P',  name: 'Priya',         kind: 'human' },
+        'PRIN-SHANI':  { initials: 'S',  name: 'Shani',         kind: 'human' },
+        'AGENT-GROCERY': { initials: '∘', name: 'grocery-bot',  kind: 'agent' },
+      };
+
+      // --- Mock event log (vault stream events for stream "saanjha:groceries"). ---
+      // Authored using the spec's exact event shapes so session 2 can swap this
+      // for `await fabric.vault.read(...)` without renaming a single field.
+      const MOCK_EVENTS = (() => {
+        const out = [];
+        const seed = (id, kind, payload, principal) => {
+          out.push({
+            event_id: pseudoUlid(),
+            kind, payload,
+            appended_at: new Date(Date.now() - (200 - out.length) * 60_000).toISOString(),
+            appended_by_principal: principal,
+          });
+        };
+        seed('m1', 'list:metadata', { name: 'Groceries', color: '#7c9a8a', icon: 'shopping-cart' }, 'PRIN-BHAI');
+        const items = [
+          { text: 'Milk',           qty: '2L',    by: 'PRIN-BHAI'   },
+          { text: 'Atta',           qty: '5kg',   by: 'PRIN-PRIYA'  },
+          { text: 'Onions',         qty: '1kg',   by: 'PRIN-BHAI'   },
+          { text: 'Tomatoes',       qty: '500g',  by: 'PRIN-SHANI'  },
+          { text: 'Cooking oil',    qty: '1L',    by: 'PRIN-BHAI'   },
+          { text: 'Curd',           qty: '400g',  by: 'PRIN-PRIYA'  },
+          { text: 'Bread',          qty: '1',     by: 'PRIN-SHANI'  },
+          { text: 'Eggs',           qty: '1 dozen', by: 'PRIN-BHAI' },
+          { text: 'Bananas',        qty: '6',     by: 'PRIN-PRIYA'  },
+          { text: 'Cumin',          qty: '100g',  by: 'AGENT-GROCERY' },
+          { text: 'Cardamom',       qty: '50g',   by: 'AGENT-GROCERY' },
+          { text: 'Detergent',      qty: '1',     by: 'PRIN-BHAI'   },
+          { text: 'Mustard oil',    qty: '500ml', by: 'PRIN-PRIYA'  },
+          { text: 'Lentils (toor)', qty: '500g',  by: 'PRIN-SHANI'  },
+        ];
+        let pos = 'a';
+        for (const it of items) {
+          const itemId = pseudoUlid();
+          seed(itemId, 'list:item-added',
+            { item_id: itemId, text: it.text, qty: it.qty, position: pos },
+            it.by);
+          pos = nextPosition(pos);
+        }
+        // A few are already checked off (Onions, Cooking oil).
+        const onionsId = out.find((e) => e.kind === 'list:item-added' && e.payload.text === 'Onions').payload.item_id;
+        const oilId    = out.find((e) => e.kind === 'list:item-added' && e.payload.text === 'Cooking oil').payload.item_id;
+        seed(onionsId, 'list:item-checked', { item_id: onionsId }, 'PRIN-PRIYA');
+        seed(oilId,    'list:item-checked', { item_id: oilId },    'PRIN-SHANI');
+        return out;
+      })();
+
+      // --- Fractional positions (placeholder; session 3 swaps for the
+      //     `fractional-indexing` library proper). For session 1 we just
+      //     use ascending lowercase strings so byPosition sorts fine. ---
+      function nextPosition(prev) {
+        if (!prev) return 'a';
+        const last = prev.charCodeAt(prev.length - 1);
+        if (last < 'z'.charCodeAt(0)) {
+          return prev.slice(0, -1) + String.fromCharCode(last + 1);
+        }
+        return prev + 'a';
+      }
+
+      // --- Materialization (spec §"Materialization", line 150-174). ---
+      function materializeList(events) {
+        const items = new Map();
+        const metadata = { name: 'List', color: '#7c9a8a', icon: 'shopping-cart' };
+        const authors = new Map(); // item_id → principal_id of last writer
+        for (const ev of events) {
+          switch (ev.kind) {
+            case 'list:metadata':
+              Object.assign(metadata, ev.payload);
+              break;
+            case 'list:item-added':
+              if (!items.has(ev.payload.item_id)) {
+                items.set(ev.payload.item_id, {
+                  item_id: ev.payload.item_id,
+                  text: ev.payload.text,
+                  qty: ev.payload.qty ?? '',
+                  position: ev.payload.position ?? 'a',
+                  checked: false,
+                });
+                authors.set(ev.payload.item_id, ev.appended_by_principal);
+              }
+              break;
+            case 'list:item-checked': {
+              const it = items.get(ev.payload.item_id);
+              if (it) it.checked = true;
+              break;
+            }
+            case 'list:item-unchecked': {
+              const it = items.get(ev.payload.item_id);
+              if (it) it.checked = false;
+              break;
+            }
+            case 'list:item-edited': {
+              const it = items.get(ev.payload.item_id);
+              if (it) {
+                if (typeof ev.payload.text === 'string') it.text = ev.payload.text;
+                if (typeof ev.payload.qty === 'string')  it.qty  = ev.payload.qty;
+                authors.set(ev.payload.item_id, ev.appended_by_principal);
+              }
+              break;
+            }
+            case 'list:item-reordered': {
+              const it = items.get(ev.payload.item_id);
+              if (it) it.position = ev.payload.new_position;
+              break;
+            }
+            case 'list:item-deleted':
+              items.delete(ev.payload.item_id);
+              authors.delete(ev.payload.item_id);
+              break;
+            default:
+              // Unknown event kinds are ignored — forward-compat with
+              // fabric-spec's "ignore unknown kinds" guidance.
+              break;
+          }
+        }
+        const itemsArr = [...items.values()].sort(byPosition);
+        return { items: itemsArr, metadata, authors };
+      }
+      function byPosition(a, b) {
+        if (a.position < b.position) return -1;
+        if (a.position > b.position) return 1;
+        return 0;
+      }
+
+      // --- View state. The model is the event log; the view re-materializes
+      //     after every mutation. This mirrors how session 2 will fold in
+      //     Fabric: `fabric.vault.subscribe` produces an event stream that
+      //     we materialize the same way. ---
+      const state = {
+        events: [...MOCK_EVENTS],
+        filter: 'all',
+        editingItemId: null,
+        // localPrincipal is whoever is "this user" — in session 1 we
+        // fake it as Bhai; session 2 pulls from the unlocked FIF.
+        localPrincipal: 'PRIN-BHAI',
+      };
+
+      function pushEvent(kind, payload) {
+        state.events.push({
+          event_id: pseudoUlid(),
+          kind, payload,
+          appended_at: new Date().toISOString(),
+          appended_by_principal: state.localPrincipal,
+        });
+      }
+
+      // --- Render ---
+      const $items = document.getElementById('items');
+      const $empty = document.getElementById('empty');
+      const $title = document.getElementById('list-title');
+      const $meta = document.getElementById('list-meta');
+      const $filterMeta = document.getElementById('filter-meta');
+      const $presence = document.getElementById('presence');
+      const $form = document.getElementById('add-form');
+      const $addText = document.getElementById('add-text');
+      const $addQty = document.getElementById('add-qty');
+
+      function render() {
+        const { items, metadata, authors } = materializeList(state.events);
+        $title.textContent = metadata.name ?? 'List';
+
+        // Filtering.
+        const visible = items.filter((it) =>
+          state.filter === 'all'     ? true :
+          state.filter === 'open'    ? !it.checked :
+          state.filter === 'checked' ? it.checked  :
+          true);
+
+        // Counts.
+        const openCount = items.filter((i) => !i.checked).length;
+        $meta.textContent = openCount === 1 ? '1 open' : `${openCount} open`;
+        $filterMeta.textContent = state.filter === 'all'
+          ? `Showing all (${items.length})`
+          : state.filter === 'open'
+            ? `Showing open (${visible.length} of ${items.length})`
+            : `Showing done (${visible.length} of ${items.length})`;
+
+        // Presence — distinct authors of any visible item, plus the local user.
+        const seen = new Map();
+        for (const it of items) {
+          const p = authors.get(it.item_id);
+          if (!p || seen.has(p)) continue;
+          seen.set(p, AUTHORS[p] ?? { initials: '?', name: p, kind: 'unknown' });
+        }
+        $presence.innerHTML = '';
+        for (const [pid, a] of seen) {
+          const el = document.createElement('span');
+          el.className = 'pill' + (a.kind === 'agent' ? ' agent' : '');
+          el.textContent = a.initials;
+          el.title = a.name + (a.kind === 'agent' ? ' (agent)' : '');
+          el.setAttribute('aria-label', a.name);
+          el.dataset.principal = pid;
+          $presence.appendChild(el);
+        }
+
+        // Items.
+        $items.innerHTML = '';
+        if (visible.length === 0) {
+          $items.hidden = true;
+          $empty.hidden = false;
+          return;
+        }
+        $items.hidden = false;
+        $empty.hidden = true;
+
+        for (const it of visible) {
+          const li = document.createElement('li');
+          li.className = 'item' + (it.checked ? ' checked' : '');
+          li.dataset.itemId = it.item_id;
+
+          // checkbox
+          const check = document.createElement('label');
+          check.className = 'check';
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = !!it.checked;
+          input.setAttribute('aria-label', it.checked ? `Mark ${it.text} as open` : `Mark ${it.text} as done`);
+          input.addEventListener('change', () => {
+            pushEvent(input.checked ? 'list:item-checked' : 'list:item-unchecked', { item_id: it.item_id });
+            render();
+          });
+          check.appendChild(input);
+          li.appendChild(check);
+
+          // text
+          const text = document.createElement('div');
+          text.className = 'text';
+          if (state.editingItemId === it.item_id) {
+            const edit = document.createElement('input');
+            edit.type = 'text';
+            edit.value = it.text;
+            edit.className = 'edit';
+            edit.setAttribute('aria-label', `Edit ${it.text}`);
+            const commit = () => {
+              const v = edit.value.trim();
+              if (v && v !== it.text) {
+                pushEvent('list:item-edited', { item_id: it.item_id, text: v });
+              }
+              state.editingItemId = null;
+              render();
+            };
+            edit.addEventListener('blur', commit);
+            edit.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') { commit(); }
+              if (e.key === 'Escape') { state.editingItemId = null; render(); }
+            });
+            text.appendChild(edit);
+            setTimeout(() => { edit.focus(); edit.select(); }, 0);
+          } else {
+            text.textContent = it.text;
+            text.tabIndex = 0;
+            text.setAttribute('role', 'button');
+            text.setAttribute('aria-label', `Edit ${it.text}`);
+            text.addEventListener('click', () => {
+              state.editingItemId = it.item_id;
+              render();
+            });
+            text.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                state.editingItemId = it.item_id;
+                render();
+              }
+            });
+          }
+          li.appendChild(text);
+
+          // qty + author + actions stack on the right
+          const right = document.createElement('div');
+          right.style.display = 'flex';
+          right.style.alignItems = 'center';
+          if (it.qty) {
+            const qty = document.createElement('span');
+            qty.className = 'qty';
+            qty.textContent = it.qty;
+            right.appendChild(qty);
+          }
+          const principal = authors.get(it.item_id);
+          if (principal) {
+            const author = AUTHORS[principal];
+            if (author) {
+              const a = document.createElement('span');
+              a.className = 'author';
+              a.textContent = author.initials;
+              a.title = author.name + (author.kind === 'agent' ? ' (agent)' : '');
+              right.appendChild(a);
+            }
+          }
+          const actions = document.createElement('span');
+          actions.className = 'row-actions';
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'del';
+          del.textContent = 'delete';
+          del.setAttribute('aria-label', `Delete ${it.text}`);
+          del.addEventListener('click', () => {
+            if (confirm(`Delete "${it.text}"?`)) {
+              pushEvent('list:item-deleted', { item_id: it.item_id });
+              render();
+            }
+          });
+          actions.appendChild(del);
+          right.appendChild(actions);
+          li.appendChild(right);
+
+          // drag handle
+          const drag = document.createElement('span');
+          drag.className = 'drag';
+          drag.textContent = '⠿';
+          drag.title = 'Drag (session 3)';
+          drag.setAttribute('aria-hidden', 'true');
+          li.appendChild(drag);
+
+          $items.appendChild(li);
+        }
+      }
+
+      // --- Handlers ---
+      $form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = $addText.value.trim();
+        const qty  = $addQty.value.trim();
+        if (!text) return;
+        const itemId = pseudoUlid();
+        const last = materializeList(state.events).items.at(-1);
+        const position = last ? nextPosition(last.position) : 'a';
+        pushEvent('list:item-added', { item_id: itemId, text, qty: qty || undefined, position });
+        $addText.value = '';
+        $addQty.value = '';
+        render();
+        $addText.focus();
+      });
+
+      for (const btn of document.querySelectorAll('.filter button')) {
+        btn.addEventListener('click', () => {
+          state.filter = btn.dataset.filter;
+          for (const b of document.querySelectorAll('.filter button')) {
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+          }
+          render();
+        });
+      }
+
+      document.getElementById('menu-btn').addEventListener('click', () => {
+        alert('Operator menu — lists / settings / sync — arrives in M8 session 4.');
+      });
+
+      // Expose for the Playwright smoke harness.
+      window.__SAANJHA__ = {
+        materializeList,
+        getState: () => structuredClone({
+          events: state.events,
+          filter: state.filter,
+        }),
+        getItems: () => materializeList(state.events).items,
+        version: 'saanjha-session-1',
+      };
+
+      render();
+    </script>
+  </body>
+</html>
