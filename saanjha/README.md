@@ -2,68 +2,129 @@
 
 Shared-list consumer tool (working name; final name TBD at launch). Phase 1's flagship consumer of the Private Mesh: a single-HTML, zero-account, multi-user list that syncs across devices using fabric Vault streams.
 
-**Status:** alpha — **M8 session 1 complete** (skeleton + read-only with mock data). The deliverable is `saanjha.html` — a single self-contained file (~27 KB) that materializes a list from an event log, supports add / check / uncheck / edit / delete / filter against local state, and renders presence chips for the principals (human + agent) who authored items. Fabric integration arrives in session 2.
+**Status:** alpha — **M8 complete** (all 5 sessions). The deliverable is `saanjha.html` — a single self-contained file (~70 KB) that runs in two modes:
+
+- **Demo mode** (default) — local mock data, no backend; the read-only-with-mock surface that anchors the session-1 smoke.
+- **Fabric mode** — talks to a real Hub via [fabric-sdk-js](../fabric-sdk-js): FIF unlock + `vault.append`/`vault.read` + polling subscribe + freshness indicator + per-stream membership. Switches over via the "Set up sync" modal (production path) or `window.__GATE` (test injection).
 
 ## Sessions
 
-| Session | Status | What lands |
-| --- | --- | --- |
-| 1 | done | HTML/CSS layout, materializeList(), mock event log, local CRUD, filter, inline edit, a11y basics |
-| 2 | next | FIF unlock flow, fabric.vault.read/append/subscribe, freshness indicator |
-| 3 | — | Multi-list switcher, fractional-indexing reorder, qty inline edit, conflict events |
-| 4 | — | Operator surface (sync status, members, conflicts), .naklilist export |
-| 5 | — | a11y audit, mobile UX polish, deploy |
+| Session | What landed |
+| --- | --- |
+| 1 | HTML/CSS layout, `materializeList()`, mock event log, local CRUD, filter, inline edit, a11y basics |
+| 2 | Store abstraction (`DemoStore` / `FabricStore`), FIF unlock flow, vault.read + append + polling, freshness indicator, banner |
+| 3 | Multi-list switcher, fractional-indexing (inline, ~30 LOC), drag-to-reorder + move-up/down arrows, qty inline edit |
+| 4 | Operator side-drawer (sync status / members / lists / conflicts / export / about), .naklilist export per spec |
+| 5 | a11y audit (skip-link, ARIA-hidden subtree handling, label-association check), keyboard Escape closes overlays, sticky footer |
 
 ## Quick start
 
 ```sh
-./smoke.sh                                       # asserts saanjha.html is single-file ≤ 200 KB
-open saanjha.html                                # or `xdg-open` on Linux
+./smoke.sh                                  # single-file + size constraint
+open saanjha.html                           # demo mode (mock data)
 ```
 
-End-to-end cross-browser test:
+Cross-browser gates:
 
 ```sh
-../scripts/saanjha-gate.sh                       # Playwright on Chromium + Firefox + WebKit
+../scripts/saanjha-gate.sh                  # demo-mode (s1 + s3 + s4) — Chromium + Firefox + WebKit, 27 tests
+../scripts/saanjha-fabric-gate.sh           # session 2 — spins up Hub + cli grant mint, 9 tests
 PLAYWRIGHT_PROJECT=firefox ../scripts/saanjha-gate.sh
 ```
 
-## What's in `saanjha.html`
+## Architecture
 
-Single file, no bundler, ~27 KB inlined. Pure JS (no framework) so the dep surface stays minimal — `fabric-sdk-js` joins in session 2 via CDN with SRI.
+Behind one store interface (`read()`, `append(event)`, `subscribe(cb)`), two backends:
 
-- **Layout** matches the spec's mobile-first mockup (`docs/specs/shared-list-spec-001-v1.0.md` §"Layout"): sticky topbar with hamburger / title / open-count / presence chips; sticky add-input row; flowing list of items; sticky footer with item count + filter chip.
-- **Materialization** in `materializeList(events)` follows the spec verbatim (§"Materialization"). Handles all seven event kinds: `list:metadata`, `list:item-added`, `list:item-checked`, `list:item-unchecked`, `list:item-edited`, `list:item-reordered`, `list:item-deleted`. Unknown kinds are ignored (forward-compat).
-- **Local state** is just `state.events[]` — every user action appends an event and re-renders. This is the exact shape session 2 will feed Fabric: `fabric.vault.append({ kind, payload })` swaps in cleanly.
-- **Authors / presence** — each event carries `appended_by_principal`. The header shows distinct authors as initials chips; agents get a different shape (`∘` vs a letter). Per spec §"Showing who added an item".
-- **Filter chip** — All / Open / Done. The button state mirrors `state.filter` via `aria-pressed`.
-- **Inline edit** — tap or keyboard-activate (`Enter`/`Space`) the text to edit; `Enter` commits, `Escape` cancels.
-- **Keyboard / a11y** — tab order works through the topbar, add input, each row's checkbox + text-as-button + delete, then the filter chips. Every interactive control has an `aria-label`. Focus ring uses a high-contrast blue. Touch targets are ≥ 44px. Color contrast on text is verified ≥ 4.5:1 (WCAG AA).
-- **Test hook** — `window.__SAANJHA__` exposes `materializeList`, `getItems()`, `getState()`, and a `version` tag so the Playwright suite and future session-2 wiring can introspect without touching DOM internals.
+- `DemoStore` — purely in-memory event log; what session 1 shipped. Survives reloads only via the page being kept open.
+- `FabricStore` — `fabric.vault.append` for writes, `fabric.vault.read({ sinceEventId })` polled every 1.5s for subscribe (the SDK's native `vault.subscribe` lands in M5.x SSE).
 
-## What's deliberately NOT here yet
+`materializeList()` is pure and shared — both stores feed it the same `{ kind, payload, event_id, appended_at, appended_by_principal }` shape.
 
-| Concern | Session |
+A `StoreRegistry` keyed by list_key (`demo:<ulid>` or `fabric:<ulid>`) gives the multi-list switcher per-list cursors and queue depths without losing state when the user switches.
+
+## Setup flow (Fabric mode)
+
+1. Click the banner's **Set up sync** link (or the drawer's primary action under Sync status).
+2. Modal asks for:
+   - Hub URL (e.g. `http://127.0.0.1:7842` or your Cloudflare Worker)
+   - Your FIF file (`.fif`)
+   - Passphrase
+   - Grant macaroon (base64; minted by the operator via `nakli-cli grant mint`)
+3. SDK loads, FIF unlocks, identity goes into memory, grant is set, the first list reads from `/fabric/v1/vault/stream/saanjha/<stream_id>`.
+4. Banner switches to `Connected to <hub> as <principal>`. Freshness indicator appears in the footer.
+
+The setup modal is in-memory only; nothing is stored in `localStorage` or `sessionStorage`. Reloading the page re-prompts.
+
+## .naklilist export
+
+Spec §"File format". The drawer's Export panel produces:
+
+```json
+{
+  "format": "naklilist/1.0",
+  "exported_at": "...",
+  "exported_by_principal": "...",
+  "list": {
+    "stream_id": "...",
+    "namespace": "saanjha",
+    "metadata": { "name": "Groceries", ... },
+    "events": [ { "event_id": "...", "kind": "list:item-added", ... }, ... ]
+  }
+}
+```
+
+Use cases per the spec: backup, share with someone outside your Fabric, archive a completed list. Import lands at M8.x.
+
+## Operator surface (hamburger → drawer)
+
+| Panel | What |
 | --- | --- |
-| Fabric SDK (vault.read/append/subscribe), FIF unlock | 2 |
-| Real ULIDs from `ulidx` (current uses a pseudo-ulid for mock data) | 2 |
-| Multi-list switcher + metadata edit | 3 |
-| `fractional-indexing` library + drag-to-reorder | 3 |
-| Operator menu (lists / settings / sync status / members / conflicts) | 4 |
-| .naklilist export / import | 4 |
-| Push-to-CDN deploy | 5 / M9 |
+| Sync status | Mode (Demo / Fabric Hub), freshness, queue depth, peers synced/missing |
+| Members | Every distinct principal who's authored an event on this list, with event count and agent/human chip |
+| Lists | All lists in the current registry |
+| Conflicts | Open conflicts (rare; spec §"Conflict surface" — the resolver UI lands at M8.x) |
+| Export | Download `.naklilist` |
+| About | Saanjha version + whether the SDK is loaded |
+
+## What's deliberately NOT here yet (M8.x / M9)
+
+| Concern | Where |
+| --- | --- |
+| Native SDK `vault.subscribe` (SSE) — currently polled at 1.5s | M5.x |
+| Conflict-resolution UI (review banner is wired; the resolver isn't) | M8.x |
+| Recurring items / receipt-photo / aisle grouping / push notifications | v2 |
+| Push-to-CDN deploy at `list.naklitechie.com` | M9 |
+| .naklilist import | M8.x |
+| Real fractional-indexing CDN dep (currently inline ~30 LOC) | optional polish |
+
+## Test hooks
+
+`window.__SAANJHA__` exposes:
+
+```ts
+{
+  materializeList, fiBetween, version,
+  getState(), getItems(), getEvents(), getFreshness(), getQueueSize(),
+  openSetup(), closeSetup(), openDrawer(), closeDrawer(),
+  exportList(), forceRender(),
+  switchList(key), createList(name),
+}
+```
+
+The Fabric gate (`scripts/saanjha-fabric-gate.sh`) seeds `window.__GATE = { hubUrl, grant, rootSeedHex, streamId, namespace, principalId }` before the page loads; saanjha detects this and bypasses the FIF flow via `fabric._useRootSeed`.
 
 ## Operational notes
 
-- Deploy target: `list.naklitechie.com` (Cloudflare Pages) — M8 session 5 / M9.
+- Deploy target: `list.naklitechie.com` (Cloudflare Pages) — M9.
 - No backend other than the user's chosen Private Mesh transport (Hub, CF Worker, or Local Network).
 - No analytics, no telemetry, no phone-home.
 
 ## Security notes
 
-- FIF unlock state will live in memory only (session 2). No `localStorage` / `sessionStorage`.
-- Tool-local settings will use IndexedDB (session 3+).
-- All data on the wire and at rest in transport storage is encrypted client-side using fabric primitives.
+- FIF unlock state lives in memory only. No `localStorage` / `sessionStorage`.
+- Tool-local settings will use IndexedDB (M8.x).
+- All data on the wire and at rest in transport storage is encrypted client-side via fabric primitives.
 
 ## License
 

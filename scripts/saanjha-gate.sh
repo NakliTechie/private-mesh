@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# saanjha-gate.sh — M8 session-1 gate: build the SDK bundle (so the same
+# saanjha-gate.sh — M8 demo-mode gate: build the SDK bundle (so the same
 # static server can host the saanjha page), copy saanjha.html into the
-# Playwright fixtures dir, run the session-1 Playwright suite. Three
-# browser projects (Chromium + Firefox + WebKit) all assert: mock list
-# renders, add + check + filter all work, and inline edit commits.
+# Playwright fixtures dir, run the demo-mode Playwright suites (s1, s3,
+# s4) across Chromium + Firefox + WebKit.
+#
+# session 1: mock list renders + CRUD + inline edit
+# session 3: multi-list switcher + reorder + qty edit + fractional indexing
+# session 4: operator drawer + .naklilist export + a11y essentials
+#
+# Session 2 needs a real Hub — run `scripts/saanjha-fabric-gate.sh`.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -33,12 +38,15 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 
-echo "==> Running Playwright (saanjha-s1 across all installed projects)"
+echo "==> Running Playwright (saanjha-s1 + s3 + s4 across all installed projects)"
 project_flag=""
 if [[ -n "${PLAYWRIGHT_PROJECT:-}" ]]; then
   project_flag="--project=${PLAYWRIGHT_PROJECT}"
 fi
 (cd fabric-sdk-js && SDK_TEST_BASE_URL="$sdk_url" \
-  pnpm exec playwright test ${project_flag} browser-test/saanjha-s1.spec.js)
+  pnpm exec playwright test ${project_flag} \
+    browser-test/saanjha-s1.spec.js \
+    browser-test/saanjha-s3.spec.js \
+    browser-test/saanjha-s4.spec.js)
 
-echo "==> saanjha-gate done — M8 session 1 green"
+echo "==> saanjha-gate done — M8 demo-mode (s1/s3/s4) green"
