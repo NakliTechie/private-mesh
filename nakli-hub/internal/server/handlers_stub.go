@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
@@ -253,38 +254,225 @@ func (s *Server) handleBridgePending(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Sync ---
+//
+// M7 wires multi-anchor sync. /sync/peers surfaces locally-discovered mDNS
+// peers (via the optional local.Browser the Hub installs at startup);
+// /sync/push accepts events from peers and applies them to local storage;
+// /sync/pull returns events newer than the caller's `since` cursor.
+// /sync/conflict-ack remains 501 until the full conflict-surface lands at
+// M7.x (consumers can read the vector clock today; ack is the ack-side).
 
 type syncPeersResp struct {
 	Peers []syncPeerOut `json:"peers"`
 }
 
 type syncPeerOut struct {
-	PeerID       string `json:"peer_id"`
-	LastSeenAt   string `json:"last_seen_at,omitempty"`
-	FreshnessMs  int64  `json:"freshness_ms"`
+	PeerID       string   `json:"peer_id"`
+	TransportID  string   `json:"transport_id"`
+	URL          string   `json:"url,omitempty"`
+	Version      string   `json:"version"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	LastSeenAt   string   `json:"last_seen_at,omitempty"`
+	FreshnessMs  int64    `json:"freshness_ms"`
 }
 
 func (s *Server) handleSyncPeers(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "sync", Operation: "read"}); err != nil {
 		return
 	}
-	writeSuccess(w, r, http.StatusOK, syncPeersResp{Peers: []syncPeerOut{}}, FreshnessNow(s.now()))
+	peers := []syncPeerOut{}
+	if s.localBrowser != nil {
+		for _, p := range s.localBrowser.Peers() {
+			peers = append(peers, syncPeerOut{
+				PeerID:       p.HubID,
+				TransportID:  p.TransportID,
+				URL:          p.URL,
+				Version:      p.Version,
+				Capabilities: p.Capabilities,
+				LastSeenAt:   p.LastSeenAt.UTC().Format("2006-01-02T15:04:05.000000000Z"),
+				FreshnessMs:  int64(s.now().Sub(p.LastSeenAt).Milliseconds()),
+			})
+		}
+	}
+	writeSuccess(w, r, http.StatusOK, syncPeersResp{Peers: peers}, FreshnessNow(s.now()))
 }
 
+type syncPullResp struct {
+	Events []syncEventOut `json:"events"`
+	Cursor string         `json:"cursor"`
+	More   bool           `json:"more"`
+}
+
+type syncEventOut struct {
+	Namespace          string           `json:"namespace"`
+	StreamID           string           `json:"stream_id"`
+	StreamType         string           `json:"stream_type"`
+	EventID            string           `json:"event_id"`
+	Kind               string           `json:"kind"`
+	SequenceNumber     int64            `json:"sequence_number"`
+	PayloadCiphertext  string           `json:"payload_ciphertext"`
+	PayloadMetadata    json.RawMessage  `json:"payload_metadata,omitempty"`
+	CausalDependencies []string         `json:"causal_dependencies"`
+	VectorClock        map[string]int64 `json:"vector_clock"`
+	PreviousEventHash  string           `json:"previous_event_hash,omitempty"`
+	EventHash          string           `json:"event_hash,omitempty"`
+	AppendedAt         string           `json:"appended_at"`
+	AppendedByPrincipal string          `json:"appended_by_principal"`
+}
+
+// handleSyncPull returns events newer than the caller's cursor. Cursor is a
+// monotonically-increasing rowid; clients store the cursor and pass it back.
+// limit defaults to 100, capped at 1000.
 func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "sync", Operation: "pull"}); err != nil {
 		return
 	}
-	writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,
-		"sync.pull is single-anchor-only in v1.0; multi-anchor sync ships in Phase 2", false)
+	ctx := r.Context()
+	since := r.URL.Query().Get("since")
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n := atoiSafe(l, 100); n > 0 && n <= 1000 {
+			limit = n
+		}
+	}
+	events, nextCursor, more, err := s.store.SyncPull(ctx, since, limit)
+	if err != nil {
+		s.logger.Error("SyncPull failed", "err", err)
+		writeError(w, r, http.StatusInternalServerError, ErrUnavailable, "sync.pull failed", true)
+		return
+	}
+	out := syncPullResp{Events: make([]syncEventOut, 0, len(events)), Cursor: nextCursor, More: more}
+	for _, ev := range events {
+		var vc map[string]int64
+		if ev.VectorClock != "" {
+			_ = json.Unmarshal([]byte(ev.VectorClock), &vc)
+		}
+		var deps []string
+		if ev.CausalDependencies != "" {
+			_ = json.Unmarshal([]byte(ev.CausalDependencies), &deps)
+		}
+		var meta json.RawMessage
+		if ev.PayloadMetadata != "" {
+			meta = json.RawMessage(ev.PayloadMetadata)
+		}
+		out.Events = append(out.Events, syncEventOut{
+			Namespace:           ev.Namespace,
+			StreamID:            ev.StreamID,
+			StreamType:          ev.StreamType,
+			EventID:             ev.EventID,
+			Kind:                ev.Kind,
+			SequenceNumber:      ev.SequenceNumber,
+			PayloadCiphertext:   base64Std(ev.PayloadCiphertext),
+			PayloadMetadata:     meta,
+			CausalDependencies:  deps,
+			VectorClock:         vc,
+			PreviousEventHash:   base64IfPresent(ev.PreviousEventHash),
+			EventHash:           base64IfPresent(ev.EventHash),
+			AppendedAt:          ev.AppendedAt.UTC().Format("2006-01-02T15:04:05.000000000Z"),
+			AppendedByPrincipal: ev.AppendedByPrincipal,
+		})
+	}
+	writeSuccess(w, r, http.StatusOK, out, FreshnessNow(s.now()))
 }
 
+type syncPushReq struct {
+	Events []syncEventIn `json:"events"`
+}
+
+type syncEventIn struct {
+	Namespace          string           `json:"namespace"`
+	StreamID           string           `json:"stream_id"`
+	StreamType         string           `json:"stream_type"`
+	EventID            string           `json:"event_id"`
+	Kind               string           `json:"kind"`
+	SequenceNumber     int64            `json:"sequence_number"`
+	PayloadCiphertext  string           `json:"payload_ciphertext"`
+	PayloadMetadata    json.RawMessage  `json:"payload_metadata,omitempty"`
+	CausalDependencies []string         `json:"causal_dependencies"`
+	VectorClock        map[string]int64 `json:"vector_clock"`
+	PreviousEventHash  string           `json:"previous_event_hash,omitempty"`
+	EventHash          string           `json:"event_hash,omitempty"`
+	AppendedAt         string           `json:"appended_at"`
+	AppendedByPrincipal string          `json:"appended_by_principal"`
+	AppendedByGrantID  string           `json:"appended_by_grant_id"`
+}
+
+type syncPushResp struct {
+	Accepted int      `json:"accepted"`
+	Skipped  int      `json:"skipped"`
+	Errors   []string `json:"errors,omitempty"`
+}
+
+// handleSyncPush accepts events from a peer and applies them to local
+// storage if the event_id is not already present. This is multi-master
+// sync without conflict resolution beyond idempotency; the receiving
+// Hub trusts the sending peer's macaroon Grant + the included
+// appended_by_grant_id authorization.
 func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "sync", Operation: "push"}); err != nil {
 		return
 	}
-	writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,
-		"sync.push is single-anchor-only in v1.0; multi-anchor sync ships in Phase 2", false)
+	ctx := r.Context()
+	var req syncPushReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "request body is not valid JSON", false)
+		return
+	}
+	resp := syncPushResp{}
+	for _, ev := range req.Events {
+		if ev.EventID == "" || ev.Namespace == "" || ev.StreamID == "" {
+			resp.Skipped++
+			continue
+		}
+		ciphertext, err := decodeStdBase64(ev.PayloadCiphertext)
+		if err != nil {
+			resp.Skipped++
+			resp.Errors = append(resp.Errors, "bad ciphertext for "+ev.EventID)
+			continue
+		}
+		blobPath, err := s.store.WriteBlob(ev.Namespace, ev.EventID, ciphertext, s.cfg.Storage.FsyncWrites)
+		if err != nil {
+			resp.Skipped++
+			resp.Errors = append(resp.Errors, "blob write failed for "+ev.EventID+": "+err.Error())
+			continue
+		}
+		in := storage.SyncIngestInput{
+			EventID:             ev.EventID,
+			Namespace:           ev.Namespace,
+			StreamID:            ev.StreamID,
+			StreamType:          ev.StreamType,
+			Kind:                ev.Kind,
+			BlobPath:            blobPath,
+			PayloadSize:         int64(len(ciphertext)),
+			PayloadMetadata:     string(ev.PayloadMetadata),
+			CausalDependencies:  jsonStringArray(ev.CausalDependencies),
+			VectorClock:         jsonStringMap(ev.VectorClock),
+			PreviousEventHash:   nil,
+			EventHash:           nil,
+			AppendedByPrincipal: ev.AppendedByPrincipal,
+			AppendedByGrantID:   ev.AppendedByGrantID,
+		}
+		if ev.PreviousEventHash != "" {
+			in.PreviousEventHash, _ = decodeStdBase64(ev.PreviousEventHash)
+		}
+		if ev.EventHash != "" {
+			in.EventHash, _ = decodeStdBase64(ev.EventHash)
+		}
+		if t, err := time.Parse(time.RFC3339Nano, ev.AppendedAt); err == nil {
+			in.AppendedAt = t
+		}
+		if err := s.store.IngestEvent(ctx, in); err != nil {
+			if err == storage.ErrAlreadyPresent {
+				resp.Skipped++
+				continue
+			}
+			resp.Skipped++
+			resp.Errors = append(resp.Errors, "ingest failed for "+ev.EventID+": "+err.Error())
+			continue
+		}
+		resp.Accepted++
+	}
+	writeSuccess(w, r, http.StatusOK, resp, FreshnessNow(s.now()))
 }
 
 func (s *Server) handleSyncConflictAck(w http.ResponseWriter, r *http.Request) {
@@ -292,5 +480,18 @@ func (s *Server) handleSyncConflictAck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,
-		"sync.conflict_ack ships once conflict surfacing is wired (Phase 2)", false)
+		"sync.conflict_ack ships once conflict surfacing is wired (M7.x)", false)
+}
+
+// base64Std re-encodes raw bytes as standard-padded base64. Defined here so
+// every handler emits the same encoding regardless of where bytes came from.
+func base64Std(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return base64IfPresent(b)
+}
+
+func decodeStdBase64(s string) ([]byte, error) {
+	return tryBase64(s)
 }

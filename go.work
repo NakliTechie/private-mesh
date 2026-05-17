@@ -4,4 +4,5 @@ use (
 	./fabric-sdk-go
 	./nakli-cli
 	./nakli-hub
+	./nakli-local-bridge
 )

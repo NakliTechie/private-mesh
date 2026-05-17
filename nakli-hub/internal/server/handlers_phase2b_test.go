@@ -448,8 +448,13 @@ func TestSyncEndpointsStubbed(t *testing.T) {
 	if status, _ := h.do(t, "GET", "/fabric/v1/sync/peers", nil, map[string]string{"X-Fabric-Grant": g}); status != http.StatusOK {
 		t.Errorf("sync/peers status: %d, want 200", status)
 	}
-	if status, _ := h.do(t, "GET", "/fabric/v1/sync/pull?peer_id=anywhere", nil, map[string]string{"X-Fabric-Grant": g}); status != http.StatusNotImplemented {
-		t.Errorf("sync/pull status: %d, want 501", status)
+	// M7: sync/pull is now live (200 with an empty event set on a fresh Hub).
+	if status, _ := h.do(t, "GET", "/fabric/v1/sync/pull?since=0", nil, map[string]string{"X-Fabric-Grant": g}); status != http.StatusOK {
+		t.Errorf("sync/pull status: %d, want 200", status)
+	}
+	// sync/conflict-ack stays 501 until M7.x.
+	if status, _ := h.do(t, "POST", "/fabric/v1/sync/conflict-ack", map[string]any{}, map[string]string{"X-Fabric-Grant": g}); status != http.StatusNotImplemented {
+		t.Errorf("sync/conflict-ack status: %d, want 501", status)
 	}
 }
 

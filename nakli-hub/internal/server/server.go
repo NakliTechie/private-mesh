@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/local"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/hubid"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
@@ -41,6 +42,11 @@ type Server struct {
 	// keeps returning 501 for caveat-passing calls (the M3 behavior). The
 	// Hub binary wires this up at startup.
 	bridge *bridge.Registry
+
+	// localBrowser is the mDNS browser the Hub uses to surface peers on
+	// /sync/peers (M7). nil = no mDNS (tests that don't want network
+	// access); /sync/peers returns an empty list.
+	localBrowser *local.Browser
 }
 
 // New constructs a Server. cfg, store, and identity must be initialized.
@@ -93,3 +99,7 @@ func (s *Server) SetBridgeRegistry(r *bridge.Registry) { s.bridge = r }
 
 // BridgeRegistry returns the installed registry, or nil. Used by tests.
 func (s *Server) BridgeRegistry() *bridge.Registry { return s.bridge }
+
+// SetLocalBrowser installs the mDNS browser the Hub queries for /sync/peers.
+// The Hub binary wires this up at serve time when local network is enabled.
+func (s *Server) SetLocalBrowser(b *local.Browser) { s.localBrowser = b }

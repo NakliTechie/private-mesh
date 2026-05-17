@@ -32,12 +32,34 @@ import (
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/openaicompatible"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/webhookpost"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/conformance"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/local"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/backup"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/hubid"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/server"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
 )
+
+// mdnsPortFromListen extracts the port from the Hub's listen address
+// ("127.0.0.1:7842" → 7842) so the mDNS TXT record advertises the right
+// thing.
+func mdnsPortFromListen(listen string) int {
+	idx := strings.LastIndex(listen, ":")
+	if idx < 0 || idx == len(listen)-1 {
+		return 7842
+	}
+	port := 0
+	for _, ch := range listen[idx+1:] {
+		if ch < '0' || ch > '9' {
+			return 7842
+		}
+		port = port*10 + int(ch-'0')
+	}
+	if port == 0 {
+		return 7842
+	}
+	return port
+}
 
 // newBridgeRegistry assembles the v1.0 starter catalogue plus the inert
 // conformance-test adapter the conformance suite uses for caveat tests.
@@ -201,6 +223,8 @@ func runServe(args []string) int {
 	listenFlag := fs.String("listen", "", "override hub.listen from config")
 	var peerURLs stringSliceFlag
 	fs.Var(&peerURLs, "peer-url", "peer URL the Hub will probe for /health.degraded (repeatable)")
+	localNet := fs.Bool("local-network", false, "announce on mDNS + browse for local peers (Local Network transport)")
+	advertiseURL := fs.String("advertise-url", "", "URL peers should reach this Hub at (defaults to http://<host>:<port>); used in mDNS TXT")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -256,6 +280,53 @@ func runServe(args []string) int {
 	reg := newBridgeRegistry()
 	srv.SetBridgeRegistry(reg)
 	logger.Info("bridge registry installed", "count", len(reg.Catalogue()))
+
+	// Local Network transport (mDNS announce + browse). M7.
+	var (
+		mdnsAnnouncer *local.Announcer
+		mdnsBrowser   *local.Browser
+	)
+	if *localNet {
+		port := mdnsPortFromListen(cfg.Hub.Listen)
+		url := *advertiseURL
+		if url == "" {
+			url = fmt.Sprintf("http://%s", cfg.Hub.Listen)
+		}
+		txt := []string{
+			"version=naklimesh/1.0",
+			"hub_id=" + id.HubID,
+			"transport_id=" + id.HubID,
+			"principal_id=" + id.HubID,
+			"capabilities=vault,history,sync,grant,identity",
+			"url=" + url,
+		}
+		// Use the *trailing* 12 chars of the hub_id — ULIDs encode the
+		// timestamp in the first 10 chars, so two ULIDs minted in the same
+		// second collide on a leading prefix. The trailing chars are random.
+		short := id.HubID
+		if len(short) > 12 {
+			short = short[len(short)-12:]
+		}
+		ann, err := local.NewAnnouncer(local.AnnounceSpec{
+			Instance: "nakli-hub-" + short,
+			Port:     port,
+			TXT:      txt,
+		})
+		if err != nil {
+			logger.Warn("local network: mDNS announce failed; continuing without LN", "err", err)
+		} else {
+			mdnsAnnouncer = ann
+			logger.Info("local network: mDNS announced", "hub_id", id.HubID, "port", port, "url", url)
+		}
+		mdnsBrowser = local.NewBrowser()
+		mdnsBrowser.SetExcludeTransportID(id.HubID)
+		if err := mdnsBrowser.Start(context.Background()); err != nil {
+			logger.Warn("local network: mDNS browse failed", "err", err)
+		} else {
+			srv.SetLocalBrowser(mdnsBrowser)
+			logger.Info("local network: mDNS browse started")
+		}
+	}
 	httpSrv := &http.Server{
 		Addr:              cfg.Hub.Listen,
 		Handler:           srv.Handler(),
@@ -267,6 +338,12 @@ func runServe(args []string) int {
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutting down", "hub_id", id.HubID)
+		if mdnsAnnouncer != nil {
+			mdnsAnnouncer.Close()
+		}
+		if mdnsBrowser != nil {
+			mdnsBrowser.Stop()
+		}
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		_ = httpSrv.Shutdown(shutdownCtx)
