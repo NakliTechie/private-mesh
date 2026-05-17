@@ -22,6 +22,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/anthropicclaude"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/archiveorg"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/cloudflarer2"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/courtlistener"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/emailresend"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/nasaimages"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/openaicompatible"
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge/adapters/webhookpost"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/conformance"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/backup"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
@@ -29,6 +38,22 @@ import (
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/server"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
 )
+
+// newBridgeRegistry assembles the v1.0 starter catalogue plus the inert
+// conformance-test adapter the conformance suite uses for caveat tests.
+func newBridgeRegistry() *bridge.Registry {
+	r := bridge.NewRegistry(nil)
+	r.MustRegister(courtlistener.New())
+	r.MustRegister(archiveorg.New())
+	r.MustRegister(nasaimages.New())
+	r.MustRegister(webhookpost.New())
+	r.MustRegister(emailresend.New())
+	r.MustRegister(cloudflarer2.New())
+	r.MustRegister(anthropicclaude.New())
+	r.MustRegister(openaicompatible.New())
+	r.MustRegister(bridge.NoopAdapter{})
+	return r
+}
 
 // BinaryVersion is the runtime version string. Set via -ldflags at build time
 // for releases; defaults to a meaningful pre-release tag during development.
@@ -228,6 +253,9 @@ func runServe(args []string) int {
 		srv.SetPeerProbeURLs(peerURLs)
 		logger.Info("peer-probe configured", "urls", strings.Join(peerURLs, ","))
 	}
+	reg := newBridgeRegistry()
+	srv.SetBridgeRegistry(reg)
+	logger.Info("bridge registry installed", "count", len(reg.Catalogue()))
 	httpSrv := &http.Server{
 		Addr:              cfg.Hub.Listen,
 		Handler:           srv.Handler(),

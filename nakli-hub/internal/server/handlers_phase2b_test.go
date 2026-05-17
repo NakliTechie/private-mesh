@@ -11,6 +11,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/grant"
 )
 
@@ -400,7 +401,44 @@ func TestBridgeAdaptersEmpty(t *testing.T) {
 	}
 	_ = json.Unmarshal(env.Data, &resp)
 	if len(resp.Adapters) != 0 {
-		t.Errorf("phase 2b bridge adapters should be empty; got %d", len(resp.Adapters))
+		t.Errorf("with no registry installed, bridge/adapters should be empty; got %d", len(resp.Adapters))
+	}
+}
+
+func TestBridgeAdaptersCatalogue(t *testing.T) {
+	h := newHubFixture(t)
+	reg := bridge.NewRegistry(nil)
+	reg.MustRegister(bridge.NoopAdapter{})
+	h.srv.SetBridgeRegistry(reg)
+	g := h.mintGrantWithScope(t, "bridge", "*", []string{"read"}, nil)
+	status, body := h.do(t, "GET", "/fabric/v1/bridge/adapters", nil, map[string]string{"X-Fabric-Grant": g})
+	if status != http.StatusOK {
+		t.Fatalf("status: %d, body=%s", status, body)
+	}
+	var env successEnv
+	_ = json.Unmarshal(body, &env)
+	var resp struct {
+		Adapters []struct {
+			Name       string `json:"name"`
+			Version    string `json:"version"`
+			Operations []struct {
+				Name string `json:"name"`
+			} `json:"operations"`
+			Status string `json:"status"`
+		} `json:"adapters"`
+	}
+	_ = json.Unmarshal(env.Data, &resp)
+	if len(resp.Adapters) != 1 {
+		t.Fatalf("expected 1 adapter in catalogue, got %d", len(resp.Adapters))
+	}
+	if resp.Adapters[0].Name != bridge.NoopAdapterName {
+		t.Errorf("name: got %q want %q", resp.Adapters[0].Name, bridge.NoopAdapterName)
+	}
+	if resp.Adapters[0].Status != "active" {
+		t.Errorf("status: got %q want active", resp.Adapters[0].Status)
+	}
+	if len(resp.Adapters[0].Operations) == 0 {
+		t.Error("operations list should not be empty")
 	}
 }
 

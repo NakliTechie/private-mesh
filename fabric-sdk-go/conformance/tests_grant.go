@@ -180,11 +180,16 @@ func testRateCaveat(c *client) error {
 	return nil
 }
 
-// Test 12: max-amount caveat on Bridge calls.
+// Test 12: max-amount caveat on Bridge calls. M5.5 dispatches to the
+// `conformance-test` noop adapter when the registry is installed; the suite
+// asserts the caveat rejects amounts above the cap, and (when the noop
+// adapter is registered) accepts amounts within the cap with HTTP 200.
+// If the noop adapter is not present (Hub built without M5.5 wiring), the
+// suite accepts HTTP 501 as the legacy stub response.
 func testMaxAmountCaveat(c *client) error {
 	gr := c.mintGrant(grant.PrimitiveBridge, "*", []string{"call"}, []string{"max-amount <= 100 USD"})
 	body := map[string]any{
-		"adapter":   "test",
+		"adapter":   "conformance-test",
 		"operation": "transfer",
 		"domain":    "example.com",
 		"amount":    101,
@@ -203,7 +208,8 @@ func testMaxAmountCaveat(c *client) error {
 	if resp.Error == nil || resp.Error.Code != "caveat_unmet" {
 		return fmt.Errorf("expected caveat_unmet, got %+v", resp.Error)
 	}
-	// And: a sub-cap amount passes caveats and reaches the 501 stub.
+	// Sub-cap amount: caveat passes; dispatch reaches the adapter (200) or
+	// the legacy stub path (501).
 	body["amount"] = 50
 	resp, err = c.do("POST", "/fabric/v1/bridge/call", body, map[string]string{
 		"X-Fabric-Grant":           gr,
@@ -212,8 +218,8 @@ func testMaxAmountCaveat(c *client) error {
 	if err != nil {
 		return err
 	}
-	if resp.Status != 501 {
-		return fmt.Errorf("sub-cap call should reach M5.5 stub (501); got %d: %s", resp.Status, resp.RawBody)
+	if resp.Status != 200 && resp.Status != 501 {
+		return fmt.Errorf("sub-cap call: expected 200 (M5.5 noop) or 501 (M3 stub); got %d: %s", resp.Status, resp.RawBody)
 	}
 	return nil
 }
@@ -222,7 +228,7 @@ func testMaxAmountCaveat(c *client) error {
 func testOnlyDomainCaveat(c *client) error {
 	gr := c.mintGrant(grant.PrimitiveBridge, "*", []string{"call"}, []string{"only-domain in [example.com, allowed.test]"})
 	resp, err := c.do("POST", "/fabric/v1/bridge/call", map[string]any{
-		"adapter":   "test",
+		"adapter":   "conformance-test",
 		"operation": "fetch",
 		"domain":    "evil.example.com",
 	}, map[string]string{
@@ -238,9 +244,10 @@ func testOnlyDomainCaveat(c *client) error {
 	if resp.Error == nil || resp.Error.Code != "caveat_unmet" {
 		return fmt.Errorf("expected caveat_unmet, got %+v", resp.Error)
 	}
-	// allowed.test is in the list → caveat passes; 501 stub.
+	// Allowed domain: caveat passes; either the M5.5 noop adapter responds
+	// (200) or the M3 stub does (501).
 	resp, err = c.do("POST", "/fabric/v1/bridge/call", map[string]any{
-		"adapter":   "test",
+		"adapter":   "conformance-test",
 		"operation": "fetch",
 		"domain":    "allowed.test",
 	}, map[string]string{
@@ -250,8 +257,8 @@ func testOnlyDomainCaveat(c *client) error {
 	if err != nil {
 		return err
 	}
-	if resp.Status != 501 {
-		return fmt.Errorf("allowed domain should pass to 501 stub; got %d: %s", resp.Status, resp.RawBody)
+	if resp.Status != 200 && resp.Status != 501 {
+		return fmt.Errorf("allowed domain: expected 200 or 501; got %d: %s", resp.Status, resp.RawBody)
 	}
 	return nil
 }

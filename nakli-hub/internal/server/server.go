@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/hubid"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
@@ -35,6 +36,11 @@ type Server struct {
 	// conformance test 26.
 	peerMu   sync.Mutex
 	peerURLs []string
+
+	// bridge is the Bridge adapter registry; nil = no adapters → /bridge/call
+	// keeps returning 501 for caveat-passing calls (the M3 behavior). The
+	// Hub binary wires this up at startup.
+	bridge *bridge.Registry
 }
 
 // New constructs a Server. cfg, store, and identity must be initialized.
@@ -78,3 +84,12 @@ func (s *Server) HubID() string { return s.hubID.HubID }
 // MacaroonRootKey returns the Hub's macaroon HMAC root key. Exposed for tests
 // that need to mint Grants against this Hub.
 func (s *Server) MacaroonRootKey() []byte { return s.hubID.MacaroonRootKey }
+
+// SetBridgeRegistry installs the Bridge adapter registry. Pass nil to clear
+// (in which case /bridge/call falls back to the 501 "execution lands at M5.5"
+// path). Call before serving traffic; the registry is not goroutine-protected
+// against late changes.
+func (s *Server) SetBridgeRegistry(r *bridge.Registry) { s.bridge = r }
+
+// BridgeRegistry returns the installed registry, or nil. Used by tests.
+func (s *Server) BridgeRegistry() *bridge.Registry { return s.bridge }

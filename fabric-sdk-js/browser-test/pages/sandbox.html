@@ -38,8 +38,10 @@
 
         log(`discover: ${JSON.stringify(await fabric.discover())}`);
 
-        const streamId = ctx.streamId;
-        const payload = { item: 'milk', qty: 2, from: 'browser' };
+        // Per-load stream id so running multiple Playwright projects against
+        // the same Hub doesn't co-mingle events.
+        const streamId = ctx.streamId + '-' + Math.random().toString(36).slice(2, 10).toUpperCase();
+        const payload = { item: 'milk', qty: 2, from: 'browser', uniq: streamId };
         const { eventId, sequenceNumber } = await fabric.vault.append({
           namespace: 'list',
           streamId,
@@ -49,8 +51,10 @@
 
         const { events } = await fabric.vault.read('list', streamId);
         log(`read: ${events.length} event(s)`);
-        if (events.length !== 1) throw new Error(`expected 1 event, got ${events.length}`);
-        const got = events[0];
+        const got = events.find((e) => e.eventId === eventId);
+        if (!got) {
+          throw new Error(`event ${eventId} not found in read result (${events.length} events)`);
+        }
         log(`read.payload = ${JSON.stringify(got.payload)}`);
         if (JSON.stringify(got.payload) !== JSON.stringify(payload)) {
           throw new Error('payload mismatch after round-trip');

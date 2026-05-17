@@ -5,13 +5,16 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
 )
 
-// Phase 2b/M3 surfaces for LLM, Bridge, and Sync. M3 made the bridge handler
-// enforce caveats before the 501 short-circuit so the conformance suite can
-// drive max-amount / only-domain / requires-human-approval / idempotency-
-// required checks. Real adapter execution lands at M5.5.
+// Phase 2b/M3/M5.5 surfaces. M3 made the bridge handler enforce caveats
+// before the 501 stub so the conformance suite could drive caveat checks.
+// M5.5 wires the actual adapter registry: /bridge/adapters surfaces the
+// installed catalogue and /bridge/call dispatches via the registry. LLM and
+// Sync remain stubs (LLM proxying is intentionally not done by the Hub in
+// v1.0; multi-anchor Sync arrives in Phase 2).
 
 // --- LLM ---
 
@@ -43,31 +46,29 @@ func (s *Server) handleLLMComplete(w http.ResponseWriter, r *http.Request) {
 
 // --- Bridge ---
 
-type bridgeAdapter struct {
-	Name        string   `json:"name"`
-	Vendor      string   `json:"vendor"`
-	Operations  []string `json:"operations"`
-	Status      string   `json:"status"`
-}
-
 type bridgeAdaptersResp struct {
-	Adapters []bridgeAdapter `json:"adapters"`
+	Adapters []bridge.CatalogueEntry `json:"adapters"`
 }
 
 func (s *Server) handleBridgeAdapters(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "bridge", Operation: "read"}); err != nil {
 		return
 	}
-	writeSuccess(w, r, http.StatusOK, bridgeAdaptersResp{Adapters: []bridgeAdapter{}}, FreshnessNow(s.now()))
+	catalogue := []bridge.CatalogueEntry{}
+	if s.bridge != nil {
+		catalogue = s.bridge.Catalogue()
+	}
+	writeSuccess(w, r, http.StatusOK, bridgeAdaptersResp{Adapters: catalogue}, FreshnessNow(s.now()))
 }
 
 type bridgeCallReq struct {
-	Adapter   string          `json:"adapter"`
-	Operation string          `json:"operation"`
-	Domain    string          `json:"domain"`
-	Amount    int64           `json:"amount"`
-	Currency  string          `json:"currency"`
-	Params    json.RawMessage `json:"params"`
+	Adapter     string            `json:"adapter"`
+	Operation   string            `json:"operation"`
+	Domain      string            `json:"domain"`
+	Amount      int64             `json:"amount"`
+	Currency    string            `json:"currency"`
+	Params      map[string]any    `json:"params"`
+	Credentials map[string]string `json:"credentials,omitempty"`
 }
 
 type bridgeCallResp struct {
@@ -75,10 +76,11 @@ type bridgeCallResp struct {
 	Status    string `json:"status"`
 }
 
-// handleBridgeCall: caveat enforcement runs first so the conformance suite can
-// drive `max-amount`, `only-domain`, `requires-human-approval`, and the
-// implicit `idempotency-required`-on-bridge rule. Only when every check passes
-// does the handler return 501 — actual adapter execution arrives at M5.5.
+// handleBridgeCall: caveat enforcement runs first; on success, dispatch via
+// the registered Bridge registry. requires-human-approval short-circuits with
+// 202 + pending_id (M3 behavior preserved). When no registry is installed —
+// e.g. test fixtures that haven't wired one — the handler returns 501 so
+// existing tests against the older shape keep working.
 func (s *Server) handleBridgeCall(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req bridgeCallReq
@@ -101,9 +103,44 @@ func (s *Server) handleBridgeCall(w http.ResponseWriter, r *http.Request) {
 		BridgeCurrency: req.Currency,
 	})
 	if err == nil {
-		// All caveats satisfied; execution lands at M5.5.
-		writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,
-			"bridge.call execution lands at M5.5 (adapter framework); caveats satisfied", false)
+		// All caveats satisfied. Dispatch via the registry if one's installed.
+		if s.bridge == nil {
+			writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,
+				"bridge.call: no adapter registry installed (this Hub has no adapters)", false)
+			return
+		}
+		params := req.Params
+		if params == nil {
+			params = map[string]any{}
+		}
+		resp, callErr := s.bridge.Call(ctx, req.Adapter, &bridge.CallRequest{
+			Operation:      req.Operation,
+			Params:         params,
+			Credentials:    req.Credentials,
+			IdempotencyKey: IdempotencyKey(ctx),
+		})
+		if callErr != nil {
+			if errors.Is(callErr, bridge.ErrAdapterNotFound) {
+				writeError(w, r, http.StatusNotFound, ErrNotFound, callErr.Error(), false)
+				return
+			}
+			if errors.Is(callErr, bridge.ErrUnknownOperation) {
+				writeError(w, r, http.StatusBadRequest, ErrBadRequest, callErr.Error(), false)
+				return
+			}
+			if errors.Is(callErr, bridge.ErrMissingParam) || errors.Is(callErr, bridge.ErrMissingCredential) || errors.Is(callErr, bridge.ErrInvalidParam) {
+				writeError(w, r, http.StatusBadRequest, ErrBadRequest, callErr.Error(), false)
+				return
+			}
+			writeError(w, r, http.StatusBadGateway, ErrUnavailable, callErr.Error(), true)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]any{
+			"adapter":   req.Adapter,
+			"operation": req.Operation,
+			"result":    resp.Result,
+			"metrics":   resp.Metrics,
+		}, FreshnessNow(s.now()))
 		return
 	}
 	if !errors.Is(err, errHumanApprovalRequired) {
@@ -114,9 +151,11 @@ func (s *Server) handleBridgeCall(w http.ResponseWriter, r *http.Request) {
 	// human can later approve.
 	g := grantFromCtx(ctx)
 	pendingID := newULID()
-	paramsJSON := string(req.Params)
-	if paramsJSON == "" {
-		paramsJSON = "{}"
+	paramsJSON := "{}"
+	if req.Params != nil {
+		if b, err := json.Marshal(req.Params); err == nil {
+			paramsJSON = string(b)
+		}
 	}
 	if err := s.store.InsertPendingBridge(ctx, storage.PendingBridge{
 		PendingID:            pendingID,

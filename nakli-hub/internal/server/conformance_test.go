@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/conformance"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
 )
@@ -20,6 +21,13 @@ func TestConformanceSuite(t *testing.T) {
 	// Test 26 needs a configured peer that the Hub cannot reach. The Hub
 	// reports `degraded:true` when any peer URL fails the probe.
 	h.srv.SetPeerProbeURLs([]string{"http://127.0.0.1:1/unreachable"})
+
+	// M5.5 conformance tests 12 / 13 / 14 / 31 hit /bridge/call. Install a
+	// registry with the conformance-test noop adapter so those calls reach
+	// a known no-op dispatch target.
+	reg := bridge.NewRegistry(nil)
+	reg.MustRegister(bridge.NoopAdapter{})
+	h.srv.SetBridgeRegistry(reg)
 
 	// Test 30 needs a retired principal whose id matches the prep hook.
 	prep := conformance.DefaultPrep()

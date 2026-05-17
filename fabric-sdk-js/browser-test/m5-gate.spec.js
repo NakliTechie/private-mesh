@@ -23,7 +23,9 @@ test('M5 gate / vault append + read round-trips through the SDK', async ({ page 
   const value = await result.jsonValue();
   expect(value.ok, `gate failed: ${value.error}`).toBe(true);
   expect(value.eventId).toMatch(/^[0-9A-Z]{20,}/);
+  // Each browser uses a unique stream id, so the first event in that stream
+  // is always sequence_number = 1.
   expect(value.sequenceNumber).toBe(1);
-  expect(value.payload).toEqual({ item: 'milk', qty: 2, from: 'browser' });
+  expect(value.payload).toMatchObject({ item: 'milk', qty: 2, from: 'browser' });
   expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });
