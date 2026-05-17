@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fabric-sdk M5 browser gate</title>
+  </head>
+  <body>
+    <h1>fabric-sdk browser gate</h1>
+    <pre id="log"></pre>
+    <script type="module">
+      // The Playwright test runs at /sandbox.html with three pieces of context
+      // it controls via window.__GATE: the Hub URL, a base64 macaroon Grant
+      // already minted out-of-band, and a 32-byte hex root seed for vault
+      // encryption.
+      const log = (msg) => {
+        const el = document.getElementById('log');
+        el.textContent += msg + '\n';
+        // eslint-disable-next-line no-console
+        console.log(msg);
+      };
+
+      function hexToBytes(hex) {
+        const out = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+        return out;
+      }
+
+      async function runGate() {
+        const ctx = window.__GATE;
+        if (!ctx) throw new Error('window.__GATE missing');
+
+        const { Fabric } = await import('/dist/fabric-sdk.js');
+        const fabric = new Fabric({
+          transports: [{ url: ctx.hubUrl }],
+        });
+        fabric._useRootSeed(hexToBytes(ctx.rootSeedHex));
+        fabric.useGrant(ctx.grant);
+
+        log(`discover: ${JSON.stringify(await fabric.discover())}`);
+
+        const streamId = ctx.streamId;
+        const payload = { item: 'milk', qty: 2, from: 'browser' };
+        const { eventId, sequenceNumber } = await fabric.vault.append({
+          namespace: 'list',
+          streamId,
+          event: { kind: 'list:item-added', payload },
+        });
+        log(`append: event_id=${eventId} sequence=${sequenceNumber}`);
+
+        const { events } = await fabric.vault.read('list', streamId);
+        log(`read: ${events.length} event(s)`);
+        if (events.length !== 1) throw new Error(`expected 1 event, got ${events.length}`);
+        const got = events[0];
+        log(`read.payload = ${JSON.stringify(got.payload)}`);
+        if (JSON.stringify(got.payload) !== JSON.stringify(payload)) {
+          throw new Error('payload mismatch after round-trip');
+        }
+        log('GATE OK');
+        window.__GATE_RESULT = { ok: true, eventId, sequenceNumber, payload: got.payload };
+      }
+
+      runGate().catch((e) => {
+        log(`GATE FAIL: ${e?.message ?? e}`);
+        window.__GATE_RESULT = { ok: false, error: String(e?.message ?? e) };
+      });
+    </script>
+  </body>
+</html>

@@ -8,8 +8,20 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./dist/fabric-sdk.js": "./dist/fabric-sdk.js",
+    "./dist/fabric-sdk.min.js": "./dist/fabric-sdk.min.js"
+  },
+  "files": [
+    "src/",
+    "dist/"
+  ],
   "scripts": {
     "test": "node --test --test-reporter=spec 'test/**/*.test.js'",
+    "build": "node scripts/build.mjs",
     "smoke": "./smoke.sh"
   },
   "dependencies": {
@@ -17,5 +29,9 @@
     "hash-wasm": "^4.11.0",
     "macaroon": "^3.0.4",
     "ulidx": "^2.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "esbuild": "^0.28.0"
   }
 }
