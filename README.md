@@ -31,8 +31,7 @@ The wire protocol [`fabric-spec-001-v1.0.md`](docs/specs/fabric-spec-001-v1.0.md
 | [`nakli-cf-worker/`](nakli-cf-worker/) | Cloudflare Worker transport |
 | [`nakli-local-bridge/`](nakli-local-bridge/) | mDNS bridge for browser tools |
 | [`nakli-cli/`](nakli-cli/) | Reference CLI |
-| [`saanjha/`](saanjha/) | Shared-list consumer tool (working name) |
-| [`scripts/`](scripts/) | Build, conformance, release scripts |
+| [`scripts/`](scripts/) | Build, conformance, release scripts (incl. `roster-gate.sh` / `roster-fabric-gate.sh` for the sibling [`NakliTechie/roster`](https://github.com/NakliTechie/roster) consumer) |
 | [`docs/`](docs/) | Vision, decisions, specs |
 
 ## Build

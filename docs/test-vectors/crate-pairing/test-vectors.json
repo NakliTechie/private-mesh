@@ -1,0 +1,48 @@
+{
+  "$schema_version": "1.0",
+  "source_spec": "../../specs/crate-pairing-protocol-v1.0.md",
+  "vectors": [
+    {
+      "name": "valid-v1",
+      "token": "CRATE-PAIR-eyJ2IjoxLCJ0eXBlIjoiY3JhdGUucGFpcmluZy50b2tlbiIsInNlY3JldCI6ImhQbUk4VnZMM1JmTW5YcTBBakJnV3RacERuVXJFa1NjIiwidHJhbnNwb3J0X2VuZHBvaW50IjoiaHR0cHM6Ly90cmFuc3BvcnQuZXhhbXBsZS5jb20iLCJ0cmFuc3BvcnRfdHlwZSI6ImNmLXdvcmtlciIsImJ1Y2tldF9pZCI6IjAxSFhUOURTQUNKNVJaUVhNIiwiaWRlbnRpdHlfcHVia2V5IjoiR2pLOG1OcFF2UjJXeFp5QTRCY0Q2RWZIOEprTG5NcFEiLCJpc3N1ZWRfYXQiOjE3NDc1NzIzNDUsImV4cGlyZXNfYXQiOjE3NDc1NzMyNDV9",
+      "expected_error": null,
+      "note": "Verbatim from crate-pairing-protocol-v1.0.md \u00a7'Test vectors'. Synthetic, not for production."
+    },
+    {
+      "name": "invalid-malformed-json",
+      "token": "CRATE-PAIR-aGVsbG8gd29ybGQ=",
+      "expected_error": "E_TOKEN_FORMAT",
+      "note": "Base64 decodes to ASCII 'hello world', not JSON. Per spec example."
+    },
+    {
+      "name": "invalid-wrong-version",
+      "token": "CRATE-PAIR-eyJ2Ijo5OSwidHlwZSI6ImNyYXRlLnBhaXJpbmcudG9rZW4iLCJzZWNyZXQiOiJoUG1JOFZ2TDNSZk1uWHEwQWpCZ1d0WnBEblVyRWtTYyIsInRyYW5zcG9ydF9lbmRwb2ludCI6Imh0dHBzOi8vdHJhbnNwb3J0LmV4YW1wbGUuY29tIiwidHJhbnNwb3J0X3R5cGUiOiJjZi13b3JrZXIiLCJidWNrZXRfaWQiOiIwMUhYVDlEU0FDSjVSWlFYTSIsImlkZW50aXR5X3B1YmtleSI6IkdqSzhtTnBRdlIyV3haeUE0QmNENkVmSDhKa0xuTXBRIiwiaXNzdWVkX2F0IjoxNzQ3NTcyMzQ1LCJleHBpcmVzX2F0IjoxNzQ3NTczMjQ1fQ==",
+      "expected_error": "E_PROTOCOL_VERSION",
+      "note": "v=99 is unsupported. Daemon must reject with E_PROTOCOL_VERSION per error table."
+    },
+    {
+      "name": "invalid-expired",
+      "token": "CRATE-PAIR-eyJ2IjoxLCJ0eXBlIjoiY3JhdGUucGFpcmluZy50b2tlbiIsInNlY3JldCI6ImhQbUk4VnZMM1JmTW5YcTBBakJnV3RacERuVXJFa1NjIiwidHJhbnNwb3J0X2VuZHBvaW50IjoiaHR0cHM6Ly90cmFuc3BvcnQuZXhhbXBsZS5jb20iLCJ0cmFuc3BvcnRfdHlwZSI6ImNmLXdvcmtlciIsImJ1Y2tldF9pZCI6IjAxSFhUOURTQUNKNVJaUVhNIiwiaWRlbnRpdHlfcHVia2V5IjoiR2pLOG1OcFF2UjJXeFp5QTRCY0Q2RWZIOEprTG5NcFEiLCJpc3N1ZWRfYXQiOjE3MDQwNjcyMDAsImV4cGlyZXNfYXQiOjE3MDQwNjgxMDB9",
+      "expected_error": "E_TOKEN_EXPIRED",
+      "note": "issued_at and expires_at both in Jan 2024. Per spec example."
+    },
+    {
+      "name": "invalid-missing-secret",
+      "token": "CRATE-PAIR-eyJ2IjoxLCJ0eXBlIjoiY3JhdGUucGFpcmluZy50b2tlbiIsInRyYW5zcG9ydF9lbmRwb2ludCI6Imh0dHBzOi8vdHJhbnNwb3J0LmV4YW1wbGUuY29tIiwidHJhbnNwb3J0X3R5cGUiOiJjZi13b3JrZXIiLCJidWNrZXRfaWQiOiIwMUhYVDlEU0FDSjVSWlFYTSIsImlkZW50aXR5X3B1YmtleSI6IkdqSzhtTnBRdlIyV3haeUE0QmNENkVmSDhKa0xuTXBRIiwiaXNzdWVkX2F0IjoxNzQ3NTcyMzQ1LCJleHBpcmVzX2F0IjoxNzQ3NTczMjQ1fQ==",
+      "expected_error": "E_TOKEN_FORMAT",
+      "note": "Payload lacks the required 'secret' field; falls under E_TOKEN_FORMAT (schema mismatch)."
+    },
+    {
+      "name": "invalid-wrong-type",
+      "token": "CRATE-PAIR-eyJ2IjoxLCJ0eXBlIjoibm90LmNyYXRlLnBhaXJpbmcudG9rZW4iLCJzZWNyZXQiOiJoUG1JOFZ2TDNSZk1uWHEwQWpCZ1d0WnBEblVyRWtTYyIsInRyYW5zcG9ydF9lbmRwb2ludCI6Imh0dHBzOi8vdHJhbnNwb3J0LmV4YW1wbGUuY29tIiwidHJhbnNwb3J0X3R5cGUiOiJjZi13b3JrZXIiLCJidWNrZXRfaWQiOiIwMUhYVDlEU0FDSjVSWlFYTSIsImlkZW50aXR5X3B1YmtleSI6IkdqSzhtTnBRdlIyV3haeUE0QmNENkVmSDhKa0xuTXBRIiwiaXNzdWVkX2F0IjoxNzQ3NTcyMzQ1LCJleHBpcmVzX2F0IjoxNzQ3NTczMjQ1fQ==",
+      "expected_error": "E_TOKEN_FORMAT",
+      "note": "type field is not 'crate.pairing.token'; falls under E_TOKEN_FORMAT (schema mismatch)."
+    },
+    {
+      "name": "invalid-bad-prefix",
+      "token": "PAIR-eyJ2IjoxLCJ0eXBlIjoiY3JhdGUucGFpcmluZy50b2tlbiIsInNlY3JldCI6ImhQbUk4VnZMM1JmTW5YcTBBakJnV3RacERuVXJFa1NjIiwidHJhbnNwb3J0X2VuZHBvaW50IjoiaHR0cHM6Ly90cmFuc3BvcnQuZXhhbXBsZS5jb20iLCJ0cmFuc3BvcnRfdHlwZSI6ImNmLXdvcmtlciIsImJ1Y2tldF9pZCI6IjAxSFhUOURTQUNKNVJaUVhNIiwiaWRlbnRpdHlfcHVia2V5IjoiR2pLOG1OcFF2UjJXeFp5QTRCY0Q2RWZIOEprTG5NcFEiLCJpc3N1ZWRfYXQiOjE3NDc1NzIzNDUsImV4cGlyZXNfYXQiOjE3NDc1NzMyNDV9",
+      "expected_error": "E_TOKEN_FORMAT",
+      "note": "Token does not begin with the literal 'CRATE-PAIR-' prefix the spec mandates."
+    }
+  ]
+}

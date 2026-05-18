@@ -1,4 +1,4 @@
-// M8 session-1 smoke: open saanjha.html, exercise the local-state CRUD,
+// M8 session-1 smoke: open roster.html, exercise the local-state CRUD,
 // confirm the materialization shows up. Loads the file via the test
 // server's /pages/ route (Playwright doesn't follow CORS for file:// JS
 // modules consistently across all three projects).
@@ -7,14 +7,14 @@ import { test, expect } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
-test('saanjha session 1 / mock list renders, add + check + filter all work', async ({ page }) => {
+test('roster session 1 / mock list renders, add + check + filter all work', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (msg) => {
     if (msg.type() === 'error') errors.push(msg.text());
   });
 
-  await page.goto('/pages/saanjha.html');
+  await page.goto('/pages/roster.html');
   await expect(page.locator('#list-title')).toHaveText('Groceries');
 
   // Initial mock dataset has 14 items, 2 checked.
@@ -52,21 +52,21 @@ test('saanjha session 1 / mock list renders, add + check + filter all work', asy
 
   // Materialization function is callable from the page (helps session 2's
   // tests when we swap mock for fabric events).
-  const itemCount = await page.evaluate(() => window.__SAANJHA__.getItems().length);
+  const itemCount = await page.evaluate(() => window.__ROSTER__.getItems().length);
   expect(itemCount).toBe(15);
 
   // No console errors and no uncaught page errors.
   expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });
 
-test('saanjha session 1 / inline edit a row', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 1 / inline edit a row', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Pin the row by its item id once. Once edit mode flips the visible
   // text into an input value (not a text node), `hasText` would stop
   // matching the row — so we capture the id first and hold it.
   const milkId = await page.evaluate(() => {
-    const items = window.__SAANJHA__.getItems();
+    const items = window.__ROSTER__.getItems();
     return items.find((i) => i.text === 'Milk').item_id;
   });
   expect(milkId, 'mock data should contain Milk').toBeTruthy();

@@ -1,13 +1,13 @@
-// M8 session-2 gate: saanjha.html boots into Fabric mode via
+// M8 session-2 gate: roster.html boots into Fabric mode via
 // window.__GATE, writes through a real Hub, re-reads after reload,
-// and surfaces freshness. The harness (scripts/saanjha-fabric-gate.sh)
+// and surfaces freshness. The harness (scripts/roster-fabric-gate.sh)
 // stands up nakli-hub on a free port and mints a wildcard Grant
 // before this test runs.
 
 import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
-const gateConfigPath = process.env.SAANJHA_GATE_CONFIG ?? './browser-test/saanjha-gate-config.json';
+const gateConfigPath = process.env.ROSTER_GATE_CONFIG ?? './browser-test/roster-gate-config.json';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -22,7 +22,7 @@ test.beforeAll(async ({}, testInfo) => {
   GATE = { ...base, streamId: base.streamId.slice(0, 25) + proj };
 });
 
-test('saanjha session 2 / boots into Fabric mode against the Hub', async ({ page }) => {
+test('roster session 2 / boots into Fabric mode against the Hub', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (msg) => {
@@ -30,7 +30,7 @@ test('saanjha session 2 / boots into Fabric mode against the Hub', async ({ page
   });
 
   await page.addInitScript((gate) => { window.__GATE = gate; }, GATE);
-  await page.goto('/pages/saanjha.html');
+  await page.goto('/pages/roster.html');
 
   // The boot path appends a list:metadata event, then a poll runs. The
   // banner switches to "Connected to ..." when activateFabricMode finishes.
@@ -41,7 +41,7 @@ test('saanjha session 2 / boots into Fabric mode against the Hub', async ({ page
   await expect(page.locator('#list-title')).toHaveText('Groceries');
   await expect(page.locator('li.item')).toHaveCount(0);
 
-  const mode = await page.evaluate(() => window.__SAANJHA__.getState().mode);
+  const mode = await page.evaluate(() => window.__ROSTER__.getState().mode);
   expect(mode).toBe('fabric');
 
   // Add three items through the UI.
@@ -61,9 +61,9 @@ test('saanjha session 2 / boots into Fabric mode against the Hub', async ({ page
   expect(errors, `page errors: ${errors.join('\n')}`).toEqual([]);
 });
 
-test('saanjha session 2 / items survive a reload (round-tripped through the Hub)', async ({ page }) => {
+test('roster session 2 / items survive a reload (round-tripped through the Hub)', async ({ page }) => {
   await page.addInitScript((gate) => { window.__GATE = gate; }, GATE);
-  await page.goto('/pages/saanjha.html');
+  await page.goto('/pages/roster.html');
   await expect(page.locator('#banner')).toContainText('Connected to', { timeout: 10_000 });
 
   // After Fabric boot, read() pulls the three previously-appended items.
@@ -78,13 +78,13 @@ test('saanjha session 2 / items survive a reload (round-tripped through the Hub)
   await expect(milk).toHaveClass(/checked/);
 
   // The store should hold 5 events for this stream (1 metadata + 3 add + 1 check).
-  const evCount = await page.evaluate(() => window.__SAANJHA__.getEvents().length);
+  const evCount = await page.evaluate(() => window.__ROSTER__.getEvents().length);
   expect(evCount).toBeGreaterThanOrEqual(5);
 });
 
-test('saanjha session 2 / new check survives another reload', async ({ page }) => {
+test('roster session 2 / new check survives another reload', async ({ page }) => {
   await page.addInitScript((gate) => { window.__GATE = gate; }, GATE);
-  await page.goto('/pages/saanjha.html');
+  await page.goto('/pages/roster.html');
   await expect(page.locator('#banner')).toContainText('Connected to', { timeout: 10_000 });
 
   await expect(page.locator('li.item')).toHaveCount(3, { timeout: 10_000 });

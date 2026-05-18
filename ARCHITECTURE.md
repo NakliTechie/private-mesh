@@ -5,7 +5,7 @@ Layer map for the NakliTechie Private Mesh. Top is closest to the human; bottom 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Consumer tools (single-HTML, zero-account)                          │
-│   saanjha (shared list)  ·  future tools                            │
+│   roster (shared list, sibling repo)  ·  crate  ·  future tools     │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
                   Fabric SDKs  (JS · Go)                              

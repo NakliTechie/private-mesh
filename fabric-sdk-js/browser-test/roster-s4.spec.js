@@ -5,8 +5,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
-test('saanjha session 4 / drawer opens and surfaces sync/members/lists/about', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 4 / drawer opens and surfaces sync/members/lists/about', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Drawer starts closed.
   await expect(page.locator('#drawer')).toHaveAttribute('aria-hidden', 'true');
@@ -27,7 +27,7 @@ test('saanjha session 4 / drawer opens and surfaces sync/members/lists/about', a
   expect(await memberRows.count()).toBeGreaterThanOrEqual(4);
 
   // About panel reports a session-5 version tag and "(not loaded — demo mode)" for the SDK.
-  await expect(drawer.locator('section', { hasText: 'About' })).toContainText('saanjha-session-');
+  await expect(drawer.locator('section', { hasText: 'About' })).toContainText('roster-session-');
   await expect(drawer.locator('section', { hasText: 'About' })).toContainText('demo mode');
 
   // Escape closes the drawer.
@@ -35,17 +35,17 @@ test('saanjha session 4 / drawer opens and surfaces sync/members/lists/about', a
   await expect(page.locator('#drawer')).toHaveAttribute('aria-hidden', 'true');
 });
 
-test('saanjha session 4 / export produces a valid .naklilist payload', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 4 / export produces a valid .naklilist payload', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Drive export via the test hook so we can introspect the doc directly
   // (the user-facing path is a <a download> click; the data shape is the
   // contract that matters).
-  const doc = await page.evaluate(() => window.__SAANJHA__.exportList());
+  const doc = await page.evaluate(() => window.__ROSTER__.exportList());
   expect(doc.format).toBe('naklilist/1.0');
   expect(doc.exported_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   expect(doc.list).toBeTruthy();
-  expect(doc.list.namespace).toBe('saanjha');
+  expect(doc.list.namespace).toBe('roster');
   expect(doc.list.events.length).toBeGreaterThan(10);
   expect(doc.list.metadata.name).toBe('Groceries');
 
@@ -58,8 +58,8 @@ test('saanjha session 4 / export produces a valid .naklilist payload', async ({ 
   }
 });
 
-test('saanjha session 4 / focus + a11y essentials present', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 4 / focus + a11y essentials present', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Skip-link is in DOM (visually-hidden until focused).
   const skip = page.locator('a.skip');

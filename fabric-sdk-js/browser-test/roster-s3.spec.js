@@ -5,18 +5,18 @@ import { test, expect } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
-test('saanjha session 3 / multi-list switcher creates and switches', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 3 / multi-list switcher creates and switches', async ({ page }) => {
+  await page.goto('/pages/roster.html');
   await expect(page.locator('#list-title')).toHaveText('Groceries');
 
   // Create a second list via the test hook (avoids the prompt() call).
-  await page.evaluate(() => window.__SAANJHA__.createList('Hardware store'));
+  await page.evaluate(() => window.__ROSTER__.createList('Hardware store'));
   await expect(page.locator('#list-title')).toHaveText('Hardware store');
 
   // New list starts empty + 1 metadata event.
   const items = page.locator('li.item');
   await expect(items).toHaveCount(0);
-  const stateA = await page.evaluate(() => window.__SAANJHA__.getState());
+  const stateA = await page.evaluate(() => window.__ROSTER__.getState());
   expect(stateA.knownLists.length).toBe(2);
   expect(stateA.currentListKey).toMatch(/^demo:/);
 
@@ -39,12 +39,12 @@ test('saanjha session 3 / multi-list switcher creates and switches', async ({ pa
   await expect(page.locator('li.item', { hasText: 'Drill bits' })).toHaveCount(0);
 });
 
-test('saanjha session 3 / reorder moves an item up via arrow button', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 3 / reorder moves an item up via arrow button', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Capture the first three rows in original order.
   const initial = await page.evaluate(() =>
-    window.__SAANJHA__.getItems().slice(0, 3).map((i) => i.text)
+    window.__ROSTER__.getItems().slice(0, 3).map((i) => i.text)
   );
   expect(initial[0]).toBe('Milk');
 
@@ -54,22 +54,22 @@ test('saanjha session 3 / reorder moves an item up via arrow button', async ({ p
   await atta.locator('button[aria-label="Move Atta up"]').click();
 
   const after = await page.evaluate(() =>
-    window.__SAANJHA__.getItems().slice(0, 3).map((i) => i.text)
+    window.__ROSTER__.getItems().slice(0, 3).map((i) => i.text)
   );
   expect(after[0]).toBe('Atta');
   expect(after[1]).toBe('Milk');
 
   // The materializer should have produced a list:item-reordered event.
-  const events = await page.evaluate(() => window.__SAANJHA__.getEvents());
+  const events = await page.evaluate(() => window.__ROSTER__.getEvents());
   expect(events.some((e) => e.kind === 'list:item-reordered')).toBe(true);
 });
 
-test('saanjha session 3 / qty inline edit produces a list:item-edited event with qty', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 3 / qty inline edit produces a list:item-edited event with qty', async ({ page }) => {
+  await page.goto('/pages/roster.html');
 
   // Find Milk's id, click its qty cell, type a new qty, press Enter.
   const milkId = await page.evaluate(() => {
-    const it = window.__SAANJHA__.getItems().find((i) => i.text === 'Milk');
+    const it = window.__ROSTER__.getItems().find((i) => i.text === 'Milk');
     return it.item_id;
   });
   const row = page.locator(`li.item[data-item-id="${milkId}"]`);
@@ -84,17 +84,17 @@ test('saanjha session 3 / qty inline edit produces a list:item-edited event with
   await expect(page.locator(`li.item[data-item-id="${milkId}"] .qty`)).toHaveText('1L');
 
   const edited = await page.evaluate(() => {
-    return window.__SAANJHA__.getEvents()
+    return window.__ROSTER__.getEvents()
       .filter((e) => e.kind === 'list:item-edited')
       .map((e) => e.payload);
   });
   expect(edited.some((p) => p.qty === '1L')).toBe(true);
 });
 
-test('saanjha session 3 / fractional indexing produces strictly-between keys', async ({ page }) => {
-  await page.goto('/pages/saanjha.html');
+test('roster session 3 / fractional indexing produces strictly-between keys', async ({ page }) => {
+  await page.goto('/pages/roster.html');
   const results = await page.evaluate(() => {
-    const fi = window.__SAANJHA__.fiBetween;
+    const fi = window.__ROSTER__.fiBetween;
     const cases = [
       ['a', 'b'],
       ['an', 'ao'],

@@ -14,7 +14,6 @@ SUBDIRS=(
   nakli-cf-worker
   nakli-cli
   nakli-local-bridge
-  saanjha
 )
 
 fail=0

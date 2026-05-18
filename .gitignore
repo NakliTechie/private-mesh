@@ -68,7 +68,7 @@ plan/
 **/test-results/
 **/playwright-report/
 /fabric-sdk-js/browser-test/gate-config.json
-/fabric-sdk-js/browser-test/saanjha-gate-config.json
-/fabric-sdk-js/browser-test/pages/saanjha.html
+/fabric-sdk-js/browser-test/roster-gate-config.json
+/fabric-sdk-js/browser-test/pages/roster.html
 /fabric-sdk-js/browser-test/pages/fabric-sdk.js
 /fabric-sdk-js/browser-test/pages/fabric-sdk.js.map
