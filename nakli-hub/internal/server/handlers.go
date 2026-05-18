@@ -81,6 +81,19 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.Handle("POST /fabric/v1/sync/conflict-ack",
 		s.authMiddleware(http.HandlerFunc(s.handleSyncConflictAck)))
 
+	// CRATE-PAIR — Unit C. Top-level /v1/* paths (not under /fabric/v1/) per
+	// crate-pairing-protocol-v1.0.md. Phase 1 + intent cancel authenticated;
+	// Phase 3 redeem unauthenticated (the secret IS the auth).
+	mux.Handle("POST /v1/pairing/intent",
+		s.authMiddleware(http.HandlerFunc(s.handleCratePairingIntent)))
+	mux.Handle("POST /v1/pairing/intent/cancel",
+		s.authMiddleware(http.HandlerFunc(s.handleCratePairingCancel)))
+	mux.HandleFunc("POST /v1/pairing/redeem", s.handleCratePairingRedeem)
+	mux.Handle("POST /v1/capability/refresh",
+		s.authMiddleware(http.HandlerFunc(s.handleCapabilityRefresh)))
+	mux.Handle("DELETE /v1/capability/{id}",
+		s.authMiddleware(http.HandlerFunc(s.handleCapabilityRevoke)))
+
 	// Forward-compat hook 4: reserve the cluster/* namespace with 501.
 	mux.HandleFunc("/fabric/v1/cluster/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,

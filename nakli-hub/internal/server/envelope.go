@@ -94,6 +94,16 @@ const (
 	ErrRateLimited          = "rate_limited"
 	ErrHumanApprovalRequired = "human_approval_required"
 	ErrPrincipalRetired     = "principal_retired"
+
+	// CRATE-PAIR error codes — Unit C; map to E_TOKEN_* in
+	// crate-pairing-protocol-v1.0.md §"Error codes".
+	// Daemons should handle unknown codes gracefully per fabric-spec line 114.
+	ErrTokenFormat          = "token_format"
+	ErrTokenExpired         = "token_expired"
+	ErrTokenNotFound        = "token_not_found"
+	ErrTokenAlreadyRedeemed = "token_already_redeemed"
+	ErrTokenCancelled       = "token_cancelled"
+	ErrProtocolVersion      = "protocol_version"
 )
 
 // Context keys used by middleware to pass per-request data to handlers.

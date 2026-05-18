@@ -151,6 +151,31 @@ CREATE TABLE pairing_tokens (
 );
 CREATE INDEX idx_pairing_expires ON pairing_tokens(expires_at);
 `,
+	// 2: Unit C — CRATE-PAIR tokens (browser issues, daemon redeems).
+	//
+	// Separate from `pairing_tokens` (which is for device-enrollment per
+	// fabric-spec-001's /identity/pair flow). CRATE-PAIR tokens carry full
+	// crate-pairing-protocol-v1.0.md payloads and are looked up by `secret`.
+	`
+CREATE TABLE crate_pairing_tokens (
+    secret TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    bucket_id TEXT NOT NULL,
+    identity_pubkey TEXT NOT NULL,
+    transport_endpoint TEXT NOT NULL,
+    transport_type TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    redeemed_at TEXT,
+    redeemed_by_daemon_pubkey TEXT,
+    daemon_fingerprint TEXT,
+    issued_capability_id TEXT,
+    cancelled_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_crate_pairing_expires ON crate_pairing_tokens(expires_at);
+CREATE INDEX idx_crate_pairing_bucket ON crate_pairing_tokens(bucket_id);
+`,
 }
 
 // Migrate brings the database to the latest schema version. Idempotent.
