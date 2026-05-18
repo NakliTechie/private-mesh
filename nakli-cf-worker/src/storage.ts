@@ -385,6 +385,62 @@ export async function markPairingCompleted(env: Env, rec: PairingRecord): Promis
   await env.STATE.put('pairing:' + rec.token, JSON.stringify(rec));
 }
 
+// ----- CRATE-PAIR tokens (Unit C) -----
+//
+// Mirrors the Hub-side `crate_pairing_tokens` table (see
+// nakli-hub/internal/storage/crate_pairing.go) but lives in KV instead of
+// SQLite. KV is eventually consistent — redemption uses a read-then-
+// conditional-write pattern; the race window is documented as a v1.0
+// limitation (see plan/Unit-C-notes.md).
+//
+// Key layout:
+//   crate-pairing:{secret}        — primary lookup; value = CratePairingTokenRecord JSON
+//
+// TTL is set to (expires_at - now) at put time so KV auto-evicts stale
+// rows. Redemption / cancellation re-puts with an extended TTL so audit
+// records survive a bit past the original token expiry.
+
+export interface CratePairingTokenRecord {
+  secret: string;
+  payload_json: string;
+  bucket_id: string;
+  identity_pubkey: string;
+  transport_endpoint: string;
+  transport_type: string;
+  issued_at: string;
+  expires_at: string;
+  redeemed_at?: string;
+  redeemed_by_daemon_pubkey?: string;
+  daemon_fingerprint?: string;
+  issued_capability_id?: string;
+  cancelled_at?: string;
+  created_at: string;
+}
+
+const cpKey = (secret: string) => 'crate-pairing:' + secret;
+
+export async function putCratePairingToken(env: Env, rec: CratePairingTokenRecord, ttlSec: number): Promise<void> {
+  const opts: KVNamespacePutOptions = {};
+  // KV's minimum expirationTtl is 60s.
+  if (ttlSec >= 60) opts.expirationTtl = ttlSec;
+  await env.STATE.put(cpKey(rec.secret), JSON.stringify(rec), opts);
+}
+
+export async function getCratePairingToken(env: Env, secret: string): Promise<CratePairingTokenRecord | null> {
+  const raw = await env.STATE.get(cpKey(secret));
+  return raw ? JSON.parse(raw) : null;
+}
+
+// updateCratePairingToken overwrites the existing row, preserving its
+// remaining TTL (KV doesn't support partial updates).
+export async function updateCratePairingToken(env: Env, rec: CratePairingTokenRecord): Promise<void> {
+  const expires = new Date(rec.expires_at).getTime();
+  // Keep the audit record for 24h after expiry so subsequent replays still
+  // surface "token already redeemed" instead of "token not found".
+  const auditTtl = Math.max(60, Math.floor((expires + 86_400_000 - Date.now()) / 1000));
+  await env.STATE.put(cpKey(rec.secret), JSON.stringify(rec), { expirationTtl: auditTtl });
+}
+
 // ----- Helpers -----
 
 export function bytesToBase64(b: Uint8Array): string {

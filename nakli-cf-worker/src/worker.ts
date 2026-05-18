@@ -53,6 +53,10 @@ import {
   putPairing,
   getPairingByToken,
   markPairingCompleted,
+  putCratePairingToken,
+  getCratePairingToken,
+  updateCratePairingToken,
+  CratePairingTokenRecord,
 } from './storage.js';
 import { sha256Hex } from './hash.js';
 import { ulid } from 'ulidx';
@@ -129,6 +133,10 @@ async function route(method: string, path: string, url: URL, req: Request, env: 
   if (method === 'GET' && path === '/fabric/v1/discover') return handleDiscover(env);
   if (method === 'POST' && path === '/fabric/v1/identity/pair/complete') return handlePairComplete(req, env);
 
+  // CRATE-PAIR redeem is unauthenticated — the `secret` IS the auth
+  // (see crate-pairing-protocol-v1.0.md §"Phase 3").
+  if (method === 'POST' && path === '/v1/pairing/redeem') return handleCratePairingRedeem(req, env);
+
   // Conformance setup endpoint — gated by env var so it's safe to expose.
   if (method === 'POST' && path === '/fabric/v1/_conformance/setup') {
     if (env.CONFORMANCE_MODE !== 'true') {
@@ -164,6 +172,18 @@ async function route(method: string, path: string, url: URL, req: Request, env: 
     return await wrap(reqCtx, env, { primitive: 'identity', op: 'read' }, () => handleIdentityPrincipal(reqCtx, env));
   if (method === 'POST' && path === '/fabric/v1/identity/pair/initiate')
     return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' }, () => handlePairInitiate(req, env));
+
+  // --- CRATE-PAIR (authenticated half) ---
+  if (method === 'POST' && path === '/v1/pairing/intent')
+    return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' }, () => handleCratePairingIntent(req, env));
+  if (method === 'POST' && path === '/v1/pairing/intent/cancel')
+    return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' }, () => handleCratePairingCancel(req, env));
+  if (method === 'POST' && path === '/v1/capability/refresh')
+    return await wrap(reqCtx, env, { primitive: 'sync', op: 'read' }, () => handleCapabilityRefresh(reqCtx, env));
+  if (method === 'DELETE' && path.startsWith('/v1/capability/')) {
+    const id = decodeURIComponent(path.slice('/v1/capability/'.length));
+    return await wrap(reqCtx, env, { primitive: 'grant', op: 'revoke' }, () => handleCapabilityRevoke(id, env));
+  }
 
   // --- vault ---
   if (method === 'POST' && path === '/fabric/v1/vault/append')
@@ -871,6 +891,216 @@ async function handleBridgePending(id: string, env: Env): Promise<Response> {
   if (!p) return errorResponse('not_found', 'pending bridge id not found', 404);
   const status = p.approved_at ? 'approved' : 'pending';
   return successResponse({ pending_id: p.pending_id, status, adapter: p.adapter, operation: p.operation });
+}
+
+// --- CRATE-PAIR handlers (Unit C parity) --------------------------------
+//
+// Mirrors nakli-hub/internal/server/handlers_crate_pairing.go. Schema +
+// auth model + error code mapping match the Hub-side implementation;
+// storage uses KV instead of SQLite. See plan/Unit-C-notes.md for the
+// known KV-vs-SQLite atomicity difference (eventually-consistent
+// read-then-conditional-write; race window documented for v1.0).
+
+const EXPECTED_TOKEN_TYPE = 'crate.pairing.token';
+const CRATE_PAIR_CURRENT_VERSION = 1;
+const CRATE_PAIR_CAPABILITY_TTL_SECONDS = 365 * 24 * 3600;
+
+interface CratePairingIntentPayload {
+  v: number;
+  type: string;
+  secret: string;
+  transport_endpoint: string;
+  transport_type: string;
+  bucket_id: string;
+  identity_pubkey: string;
+  issued_at: number;
+  expires_at: number;
+}
+
+function validateCratePairingPayload(p: CratePairingIntentPayload, nowSec: number): { code: ErrorCode | null; status: number; message: string } {
+  if (!p.v) return { code: 'bad_request', status: 400, message: 'v is required' };
+  if (p.v !== CRATE_PAIR_CURRENT_VERSION) return { code: 'protocol_version', status: 426, message: 'unsupported protocol version' };
+  if (p.type !== EXPECTED_TOKEN_TYPE) return { code: 'bad_request', status: 400, message: 'type must be "' + EXPECTED_TOKEN_TYPE + '"' };
+  if (!p.secret) return { code: 'bad_request', status: 400, message: 'secret is required' };
+  if (!p.transport_endpoint || !p.transport_type) return { code: 'bad_request', status: 400, message: 'transport_endpoint and transport_type are required' };
+  if (!p.bucket_id) return { code: 'bad_request', status: 400, message: 'bucket_id is required' };
+  if (!p.identity_pubkey) return { code: 'bad_request', status: 400, message: 'identity_pubkey is required' };
+  if (!p.issued_at || !p.expires_at) return { code: 'bad_request', status: 400, message: 'issued_at and expires_at are required' };
+  if (p.expires_at <= p.issued_at) return { code: 'bad_request', status: 400, message: 'expires_at must be > issued_at' };
+  if (p.expires_at < nowSec) return { code: 'token_expired', status: 410, message: 'token expires_at is in the past' };
+  return { code: null, status: 0, message: '' };
+}
+
+async function handleCratePairingIntent(req: Request, env: Env): Promise<Response> {
+  const raw = await req.text();
+  if (raw.length > 64 * 1024) {
+    return errorResponse('bad_request', 'request body exceeds 64 KB', 400);
+  }
+  let payload: CratePairingIntentPayload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return errorResponse('bad_request', 'request body is not valid JSON', 400);
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const v = validateCratePairingPayload(payload, nowSec);
+  if (v.code) return errorResponse(v.code, v.message, v.status);
+
+  // Conflict on existing secret is treated as idempotent success.
+  const existing = await getCratePairingToken(env, payload.secret);
+  if (existing) {
+    return successResponse({}, freshnessNow(), 201);
+  }
+
+  const ttlSec = Math.max(60, payload.expires_at - nowSec);
+  const rec: CratePairingTokenRecord = {
+    secret: payload.secret,
+    payload_json: raw,
+    bucket_id: payload.bucket_id,
+    identity_pubkey: payload.identity_pubkey,
+    transport_endpoint: payload.transport_endpoint,
+    transport_type: payload.transport_type,
+    issued_at: new Date(payload.issued_at * 1000).toISOString(),
+    expires_at: new Date(payload.expires_at * 1000).toISOString(),
+    created_at: new Date().toISOString(),
+  };
+  await putCratePairingToken(env, rec, ttlSec);
+  return successResponse({}, freshnessNow(), 201);
+}
+
+async function handleCratePairingCancel(req: Request, env: Env): Promise<Response> {
+  const body = await req.json() as { secret?: string };
+  if (!body?.secret) return errorResponse('bad_request', 'secret is required', 400);
+  const existing = await getCratePairingToken(env, body.secret);
+  if (!existing) return errorResponse('token_not_found', 'no pairing intent matches that secret', 404);
+  if (existing.redeemed_at) {
+    return errorResponse('token_already_redeemed', 'token already redeemed; revoke the issued capability via DELETE /v1/capability/{id}', 409);
+  }
+  if (existing.cancelled_at) {
+    // Idempotent.
+    return new Response(null, { status: 204 });
+  }
+  existing.cancelled_at = new Date().toISOString();
+  await updateCratePairingToken(env, existing);
+  return new Response(null, { status: 204 });
+}
+
+async function handleCratePairingRedeem(req: Request, env: Env): Promise<Response> {
+  let body: { v?: number; secret?: string; daemon_pubkey?: string; daemon_fingerprint?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return errorResponse('bad_request', 'request body is not valid JSON', 400);
+  }
+  if (body.v !== CRATE_PAIR_CURRENT_VERSION) {
+    return errorResponse('protocol_version', 'unsupported protocol version', 426);
+  }
+  if (!body.secret || !body.daemon_pubkey) {
+    return errorResponse('bad_request', 'secret and daemon_pubkey are required', 400);
+  }
+  const existing = await getCratePairingToken(env, body.secret);
+  if (!existing) return errorResponse('token_not_found', 'token not recognised', 404);
+  if (existing.cancelled_at) return errorResponse('token_cancelled', 'token was cancelled by the issuer', 404);
+  if (existing.redeemed_at) return errorResponse('token_already_redeemed', 'token already redeemed; tokens are single-use', 409);
+  if (new Date(existing.expires_at).getTime() < Date.now()) {
+    return errorResponse('token_expired', 'token has expired; generate a new one from the browser', 410);
+  }
+
+  // Mint the daemon capability — macaroon scoped to sync over the bucket
+  // namespace with `time < now+1y`, `device-id == daemon_pubkey`,
+  // `operation in [read, write]`.
+  const now = new Date();
+  const expires = new Date(now.getTime() + CRATE_PAIR_CAPABILITY_TTL_SECONDS * 1000);
+  const grantId = ulid();
+  const transportPubkey = base64ToBytes(env.HUB_PUBLIC_KEY);
+  const { macaroon } = mintMacaroon({
+    rootKey: base64ToBytes(env.MACAROON_ROOT_KEY),
+    location: 'cf-worker',
+    identifier: {
+      grant_id: grantId,
+      issued_at: now.toISOString(),
+      issued_by_principal: env.HUB_ID,
+      issued_by_keypair: transportPubkey,
+      scope: {
+        primitive: 'sync',
+        namespace: existing.bucket_id,
+        operations: ['read', 'write'],
+      },
+    },
+    caveats: [
+      'time < ' + expires.toISOString(),
+      'device-id == ' + body.daemon_pubkey,
+      'operation in [read, write]',
+    ],
+  });
+
+  // Mark redeemed via read-then-conditional-write. KV has no atomic CAS
+  // so a concurrent redeem call could win the race — re-read to check
+  // and bail if so. Race window is documented per plan/Unit-C-notes.md.
+  const reread = await getCratePairingToken(env, body.secret);
+  if (!reread || reread.redeemed_at) {
+    return errorResponse('token_already_redeemed', 'token already redeemed by a concurrent caller', 409);
+  }
+  reread.redeemed_at = now.toISOString();
+  reread.redeemed_by_daemon_pubkey = body.daemon_pubkey;
+  reread.daemon_fingerprint = JSON.stringify(body.daemon_fingerprint ?? {});
+  reread.issued_capability_id = grantId;
+  await updateCratePairingToken(env, reread);
+
+  return successResponse({
+    v: 1,
+    capability: bytesToBase64(macaroon),
+    bucket_reference: existing.bucket_id,
+    transport_pubkey: bytesToBase64(transportPubkey),
+    expires_at: Math.floor(expires.getTime() / 1000),
+  });
+}
+
+async function handleCapabilityRefresh(reqCtx: ReqContext, env: Env): Promise<Response> {
+  // Caller authenticates with their current capability — wrap()'s scope
+  // check already ran (primitive=sync, op=read). Verify the capability
+  // isn't revoked; mint a fresh one with the same scope + non-time caveats.
+  if (await isGrantRevoked(env, reqCtx.grant.grantId)) {
+    return errorResponse('grant_revoked', 'capability has been revoked; re-pair to obtain a new one', 401);
+  }
+  const now = new Date();
+  const expires = new Date(now.getTime() + CRATE_PAIR_CAPABILITY_TTL_SECONDS * 1000);
+  const newGrantId = ulid();
+  const transportPubkey = base64ToBytes(env.HUB_PUBLIC_KEY);
+
+  // Preserve scope + non-time caveats from the current capability.
+  const newCaveats: string[] = ['time < ' + expires.toISOString()];
+  for (const c of reqCtx.grant.caveats) {
+    const trimmed = c.trim();
+    if (trimmed.startsWith('time < ')) continue;
+    newCaveats.push(trimmed);
+  }
+
+  const { macaroon } = mintMacaroon({
+    rootKey: base64ToBytes(env.MACAROON_ROOT_KEY),
+    location: 'cf-worker',
+    identifier: {
+      grant_id: newGrantId,
+      issued_at: now.toISOString(),
+      issued_by_principal: env.HUB_ID,
+      issued_by_keypair: transportPubkey,
+      parent_grant_id: reqCtx.grant.grantId,
+      scope: reqCtx.grant.identifier.scope,
+    },
+    caveats: newCaveats,
+  });
+  return successResponse({
+    v: 1,
+    capability: bytesToBase64(macaroon),
+    expires_at: Math.floor(expires.getTime() / 1000),
+  });
+}
+
+async function handleCapabilityRevoke(grantId: string, env: Env): Promise<Response> {
+  if (!grantId) return errorResponse('bad_request', 'capability id is required', 400);
+  await markGrantRevoked(env, grantId, '');
+  return new Response(null, { status: 204 });
 }
 
 // --- conformance setup --------------------------------------------------

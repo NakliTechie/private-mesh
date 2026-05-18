@@ -90,4 +90,12 @@ export type ErrorCode =
   | 'not_implemented'
   | 'rate_limited'
   | 'human_approval_required'
-  | 'principal_retired';
+  | 'principal_retired'
+  // CRATE-PAIR codes (mirrors nakli-hub/internal/server/envelope.go;
+  // see crate-pairing-protocol-v1.0.md §"Error codes").
+  | 'token_format'
+  | 'token_expired'
+  | 'token_not_found'
+  | 'token_already_redeemed'
+  | 'token_cancelled'
+  | 'protocol_version';
