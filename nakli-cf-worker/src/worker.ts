@@ -60,6 +60,12 @@ import {
 } from './storage.js';
 import { sha256Hex } from './hash.js';
 import { ulid } from 'ulidx';
+import {
+  handleCrateBucketRegister,
+  handleCrateBucketMetadata,
+  handleCrateObject,
+  handleCrateList,
+} from './crate-bucket.js';
 
 // --- request-scoped state -----------------------------------------------
 
@@ -183,6 +189,37 @@ async function route(method: string, path: string, url: URL, req: Request, env: 
   if (method === 'DELETE' && path.startsWith('/v1/capability/')) {
     const id = decodeURIComponent(path.slice('/v1/capability/'.length));
     return await wrap(reqCtx, env, { primitive: 'grant', op: 'revoke' }, () => handleCapabilityRevoke(id, env));
+  }
+
+  // --- CRATE bucket-proxy (M3 piece 2) ---
+  // Register uses identity:pair (any authenticated principal can register
+  // buckets they own); metadata + object + list use sync scope on the
+  // bucket_id — daemon's capability from /v1/pairing/redeem carries this
+  // exact shape. Mirrors nakli-hub's handlers exactly.
+  if (method === 'POST' && path === '/v1/crate/bucket/register')
+    return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' },
+      () => handleCrateBucketRegister(req, env, reqCtx.grant.identifier.issued_by_principal));
+  if (method === 'GET' && path.startsWith('/v1/crate/bucket/')) {
+    const id = decodeURIComponent(path.slice('/v1/crate/bucket/'.length));
+    return await wrap(reqCtx, env, { primitive: 'sync', op: 'read', namespace: id },
+      () => handleCrateBucketMetadata(id, env));
+  }
+  if ((method === 'HEAD' || method === 'GET' || method === 'PUT' || method === 'DELETE')
+      && path.startsWith('/v1/crate/object/')) {
+    // Path shape: /v1/crate/object/{bucket_id}/{path...}
+    const rest = path.slice('/v1/crate/object/'.length);
+    const slash = rest.indexOf('/');
+    if (slash <= 0) return errorResponse('bad_request', 'object path missing', 400);
+    const bucketID = decodeURIComponent(rest.slice(0, slash));
+    const objectPath = rest.slice(slash + 1);
+    const op = (method === 'PUT' || method === 'DELETE') ? 'write' : 'read';
+    return await wrap(reqCtx, env, { primitive: 'sync', op, namespace: bucketID },
+      () => handleCrateObject(req, env, bucketID, objectPath));
+  }
+  if (method === 'GET' && path.startsWith('/v1/crate/list/')) {
+    const id = decodeURIComponent(path.slice('/v1/crate/list/'.length));
+    return await wrap(reqCtx, env, { primitive: 'sync', op: 'read', namespace: id },
+      () => handleCrateList(req, env, id));
   }
 
   // --- vault ---
