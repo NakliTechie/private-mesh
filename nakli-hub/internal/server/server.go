@@ -47,7 +47,19 @@ type Server struct {
 	// /sync/peers (M7). nil = no mDNS (tests that don't want network
 	// access); /sync/peers returns an empty list.
 	localBrowser *local.Browser
+
+	// bucketProxyClient is the HTTP client used to proxy /v1/crate/object/*
+	// requests to upstream R2 / Hetzner / B2 / AWS S3. nil = http.DefaultClient.
+	// Tests inject an httptest.Server-backed client to point at the fake-R2
+	// fixture without leaving the process.
+	bucketProxyClient *http.Client
 }
+
+// SetBucketProxyClient installs the outbound HTTP client used by the crate
+// bucket-proxy handlers to call upstream S3-API providers. Pass nil to reset
+// to http.DefaultClient. Used by tests to redirect upstream calls to a fake-R2
+// httptest.Server.
+func (s *Server) SetBucketProxyClient(c *http.Client) { s.bucketProxyClient = c }
 
 // New constructs a Server. cfg, store, and identity must be initialized.
 // binaryVersion is the runtime binary version string (e.g. "0.1.0-alpha.0").

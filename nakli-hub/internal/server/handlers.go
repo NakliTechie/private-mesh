@@ -94,6 +94,25 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.Handle("DELETE /v1/capability/{id}",
 		s.authMiddleware(http.HandlerFunc(s.handleCapabilityRevoke)))
 
+	// CRATE bucket-proxy — crate-agent M3 piece 1. Register uses identity:pair;
+	// metadata + object + list use sync scope on bucket_id. Object verbs share
+	// one handler (dispatched by method); LIST is its own route because the
+	// query-string translation is non-trivial.
+	mux.Handle("POST /v1/crate/bucket/register",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateBucketRegister)))
+	mux.Handle("GET /v1/crate/bucket/{bucket_id}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateBucketMetadata)))
+	mux.Handle("HEAD /v1/crate/object/{bucket_id}/{path...}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateObject)))
+	mux.Handle("GET /v1/crate/object/{bucket_id}/{path...}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateObject)))
+	mux.Handle("PUT /v1/crate/object/{bucket_id}/{path...}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateObject)))
+	mux.Handle("DELETE /v1/crate/object/{bucket_id}/{path...}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateObject)))
+	mux.Handle("GET /v1/crate/list/{bucket_id}",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateList)))
+
 	// Forward-compat hook 4: reserve the cluster/* namespace with 501.
 	mux.HandleFunc("/fabric/v1/cluster/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotImplemented, ErrNotImplemented,

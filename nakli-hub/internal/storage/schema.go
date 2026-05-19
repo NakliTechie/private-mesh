@@ -176,6 +176,32 @@ CREATE TABLE crate_pairing_tokens (
 CREATE INDEX idx_crate_pairing_expires ON crate_pairing_tokens(expires_at);
 CREATE INDEX idx_crate_pairing_bucket ON crate_pairing_tokens(bucket_id);
 `,
+	// 3: crate-agent M3 piece 1 — Hub-side bucket-proxy.
+	//
+	// Stores R2 (and later B2/Hetzner/AWS S3) bucket credentials registered
+	// by browsers. The Hub becomes the R2 client on the daemon's behalf —
+	// the daemon holds a capability scoped to a bucket_id; the Hub holds
+	// the sealed sig-v4 creds for that bucket. Secret access keys are
+	// encrypted-at-rest under bucketCredsKey = HKDF(macaroon_root_key,
+	// salt="crate-buckets", info="v1") — rotating the macaroon root key
+	// also rotates this (acceptable for v1; no rotation feature yet).
+	`
+CREATE TABLE crate_buckets (
+    bucket_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    account_id TEXT,
+    region TEXT NOT NULL,
+    bucket_name TEXT NOT NULL,
+    endpoint_url TEXT NOT NULL,
+    access_key_id TEXT NOT NULL,
+    secret_access_key_sealed BLOB NOT NULL,
+    nonce BLOB NOT NULL,
+    registered_by_principal TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+CREATE INDEX idx_crate_buckets_principal ON crate_buckets(registered_by_principal);
+`,
 }
 
 // Migrate brings the database to the latest schema version. Idempotent.

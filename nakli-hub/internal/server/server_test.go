@@ -142,6 +142,34 @@ func (h *hubFixture) do(t *testing.T, method, path string, body interface{}, hea
 	return resp.StatusCode, respBody
 }
 
+// doRaw is like do but takes a raw io.Reader body (no JSON marshaling, no
+// auto Content-Type). Used by the crate-bucket tests where the proxy needs
+// to forward arbitrary bytes through PUT.
+func (h *hubFixture) doRaw(t *testing.T, method, path string, body io.Reader, headers map[string]string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, h.ts.URL+path, body)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := h.ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("client.Do: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, respBody
+}
+
+// jsonUnmarshalInternal exposes encoding/json.Unmarshal to neighbour test
+// files in this package that don't import encoding/json directly.
+func jsonUnmarshalInternal(b []byte, v interface{}) error { return json.Unmarshal(b, v) }
+
 func TestHealthEndpoint(t *testing.T) {
 	h := newHubFixture(t)
 	status, body := h.do(t, "GET", "/fabric/v1/health", nil, nil)
