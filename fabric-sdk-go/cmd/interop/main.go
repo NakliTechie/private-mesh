@@ -4,11 +4,13 @@
 // verifies fixtures under ../interop-tests/m1/from-js/ if present.
 //
 // Run via scripts/m1-interop.sh, or directly:
-//   go run ./cmd/interop -mode=generate -dir ../interop-tests/m1
-//   go run ./cmd/interop -mode=verify   -dir ../interop-tests/m1
+//   go run ./cmd/interop -mode=generate    -dir ../interop-tests/m1
+//   go run ./cmd/interop -mode=verify      -dir ../interop-tests/m1
+//   go run ./cmd/interop -mode=re-serialize -in <fif.bin> -out <fif.bin>
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -56,17 +58,37 @@ type vectors struct {
 }
 
 func main() {
-	mode := flag.String("mode", "", "generate | verify")
-	dir := flag.String("dir", "", "interop-tests/m1 root directory")
-	vectorsPath := flag.String("vectors", "", "path to m1-vectors.json (default: <dir>/../m1-vectors.json)")
+	mode := flag.String("mode", "", "generate | verify | re-serialize")
+	dir := flag.String("dir", "", "interop-tests/m1 root directory (generate/verify)")
+	in := flag.String("in", "", "input fif.bin (re-serialize)")
+	out := flag.String("out", "", "output fif.bin (re-serialize)")
+	vectorsPath := flag.String("vectors", "", "path to m1-vectors.json (default: <dir>/../m1-vectors.json, or alongside -in)")
 	flag.Parse()
 
-	if *dir == "" || (*mode != "generate" && *mode != "verify") {
+	switch *mode {
+	case "generate", "verify":
+		if *dir == "" {
+			flag.Usage()
+			os.Exit(2)
+		}
+	case "re-serialize":
+		if *in == "" || *out == "" {
+			flag.Usage()
+			os.Exit(2)
+		}
+	default:
 		flag.Usage()
 		os.Exit(2)
 	}
+
 	if *vectorsPath == "" {
-		*vectorsPath = filepath.Join(filepath.Dir(*dir), "m1-vectors.json")
+		switch *mode {
+		case "generate", "verify":
+			*vectorsPath = filepath.Join(filepath.Dir(*dir), "m1-vectors.json")
+		case "re-serialize":
+			// -in is .../interop-tests/m1/<sub>/fif.bin; vectors live at .../interop-tests/m1-vectors.json
+			*vectorsPath = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(*in))), "m1-vectors.json")
+		}
 	}
 
 	v, err := readVectors(*vectorsPath)
@@ -99,6 +121,11 @@ func main() {
 			log.Fatalf("verify macaroon: %v", err)
 		}
 		fmt.Println("Go interop: verified", inDir)
+	case "re-serialize":
+		if err := reSerializeFIF(v, *in, *out); err != nil {
+			log.Fatalf("re-serialize FIF: %v", err)
+		}
+		fmt.Println("Go interop: re-serialized", *in, "->", *out)
 	}
 }
 
@@ -211,6 +238,39 @@ func generateMacaroon(v *vectors, out string) error {
 		return err
 	}
 	return os.WriteFile(out, g.Macaroon, 0o644)
+}
+
+// reSerializeFIF reads a FIF, unlocks it, enrolls a deterministic device
+// subkey (so both SDKs produce byte-identical inner content), then writes
+// the FIF back out under a fresh AEAD nonce. The other SDK's verify must
+// still decrypt — proving cross-SDK AAD binding survives nonce rotation.
+func reSerializeFIF(v *vectors, in, out string) error {
+	inBytes, err := os.ReadFile(in)
+	if err != nil {
+		return err
+	}
+	fif, err := identity.ParseFIF(bytes.NewReader(inBytes))
+	if err != nil {
+		return fmt.Errorf("ParseFIF: %w", err)
+	}
+	if err := fif.Unlock(v.FIF.Passphrase); err != nil {
+		return fmt.Errorf("Unlock: %w", err)
+	}
+	enrolledAt, _ := time.Parse(time.RFC3339, "2026-05-21T00:00:00Z")
+	fif.Inner.DeviceSubkeys = append(fif.Inner.DeviceSubkeys, identity.DeviceSubkey{
+		DeviceID:   "01JINTEROPDEVICETESTM10001",
+		DeviceName: "interop-mutator",
+		Algorithm:  identity.KeyAlgEd25519,
+		PublicKey:  bytes.Repeat([]byte{0x55}, 32),
+		PrivateKey: bytes.Repeat([]byte{0x66}, 64),
+		EnrolledAt: enrolledAt,
+	})
+	f, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return fif.Serialize(f)
 }
 
 func verifyMacaroon(v *vectors, in string) error {

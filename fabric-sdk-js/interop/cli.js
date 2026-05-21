@@ -1,10 +1,13 @@
-// CLI used by scripts/m1-interop.sh.
+// CLI used by scripts/m1-interop.sh and scripts/m1-interop-nonce.sh.
 // Modes:
 //   node interop/cli.js generate <interop-dir>
 //   node interop/cli.js verify   <interop-dir>
+//   node interop/cli.js re-serialize <in.bin> <out.bin>
 //
-// <interop-dir> is the absolute path to interop-tests/m1 in the monorepo.
-// Vectors are read from <interop-dir>/../m1-vectors.json.
+// For generate/verify, <interop-dir> is the absolute path to
+// interop-tests/m1 in the monorepo. Vectors are read from
+// <interop-dir>/../m1-vectors.json. For re-serialize, vectors are read
+// from <in.bin>'s grandparent dir (../m1-vectors.json relative to <in>).
 
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
@@ -113,6 +116,26 @@ async function verifyMacaroon(v, inPath) {
   }
 }
 
+// reSerializeFIF reads a FIF, unlocks it, enrolls a deterministic device
+// subkey (matching the Go side byte-for-byte), then writes the FIF back
+// under a fresh AEAD nonce. The Go SDK's verify must still decrypt —
+// proving cross-SDK AAD binding survives nonce rotation.
+async function reSerializeFIF(v, inPath, outPath) {
+  const inBytes = new Uint8Array(await readFile(inPath));
+  const fif = parseFIF(inBytes);
+  await fif.unlock(v.fif.passphrase);
+  fif.inner.device_subkeys.push({
+    device_id: '01JINTEROPDEVICETESTM10001',
+    device_name: 'interop-mutator',
+    algorithm: 'ed25519',
+    public_key: new Uint8Array(32).fill(0x55),
+    private_key: new Uint8Array(64).fill(0x66),
+    enrolled_at: '2026-05-21T00:00:00Z',
+  });
+  const outBytes = fif.serialize();
+  await writeFile(outPath, outBytes);
+}
+
 async function pathExists(p) {
   try {
     await stat(p);
@@ -123,28 +146,46 @@ async function pathExists(p) {
 }
 
 async function main() {
-  const [mode, dirArg] = process.argv.slice(2);
-  if (!mode || !dirArg || (mode !== 'generate' && mode !== 'verify')) {
-    console.error('usage: cli.js <generate|verify> <interop-dir>');
-    process.exit(2);
-  }
-  const interopDir = resolve(dirArg);
-  const v = await readVectors(interopDir).catch((e) => die('readVectors', e));
-
-  if (mode === 'generate') {
-    const outDir = join(interopDir, 'from-js');
-    await mkdir(outDir, { recursive: true });
-    await generateFIF(v, join(outDir, 'fif.bin')).catch((e) => die('generateFIF', e));
-    await generateMacaroon(v, join(outDir, 'macaroon.bin')).catch((e) => die('generateMacaroon', e));
-    console.log('JS interop: wrote', outDir);
-  } else {
-    const inDir = join(interopDir, 'from-go');
-    if (!(await pathExists(inDir))) {
-      die(`${inDir} not present (run Go generate first)`);
+  const args = process.argv.slice(2);
+  const mode = args[0];
+  if (mode === 'generate' || mode === 'verify') {
+    const dirArg = args[1];
+    if (!dirArg) {
+      console.error('usage: cli.js <generate|verify> <interop-dir>');
+      process.exit(2);
     }
-    await verifyFIF(v, join(inDir, 'fif.bin')).catch((e) => die('verifyFIF', e));
-    await verifyMacaroon(v, join(inDir, 'macaroon.bin')).catch((e) => die('verifyMacaroon', e));
-    console.log('JS interop: verified', inDir);
+    const interopDir = resolve(dirArg);
+    const v = await readVectors(interopDir).catch((e) => die('readVectors', e));
+
+    if (mode === 'generate') {
+      const outDir = join(interopDir, 'from-js');
+      await mkdir(outDir, { recursive: true });
+      await generateFIF(v, join(outDir, 'fif.bin')).catch((e) => die('generateFIF', e));
+      await generateMacaroon(v, join(outDir, 'macaroon.bin')).catch((e) => die('generateMacaroon', e));
+      console.log('JS interop: wrote', outDir);
+    } else {
+      const inDir = join(interopDir, 'from-go');
+      if (!(await pathExists(inDir))) {
+        die(`${inDir} not present (run Go generate first)`);
+      }
+      await verifyFIF(v, join(inDir, 'fif.bin')).catch((e) => die('verifyFIF', e));
+      await verifyMacaroon(v, join(inDir, 'macaroon.bin')).catch((e) => die('verifyMacaroon', e));
+      console.log('JS interop: verified', inDir);
+    }
+  } else if (mode === 're-serialize') {
+    const inPath = args[1];
+    const outPath = args[2];
+    if (!inPath || !outPath) {
+      console.error('usage: cli.js re-serialize <in.bin> <out.bin>');
+      process.exit(2);
+    }
+    const interopDir = dirname(dirname(resolve(inPath)));
+    const v = await readVectors(interopDir).catch((e) => die('readVectors', e));
+    await reSerializeFIF(v, resolve(inPath), resolve(outPath)).catch((e) => die('reSerializeFIF', e));
+    console.log('JS interop: re-serialized', inPath, '->', outPath);
+  } else {
+    console.error('usage: cli.js <generate|verify|re-serialize> ...');
+    process.exit(2);
   }
 }
 
