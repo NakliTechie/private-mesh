@@ -29,6 +29,7 @@ import {
   ParsedGrant,
 } from './macaroon.js';
 import { newNumericCode } from './numeric-code.js';
+import { readBodyCapped, requestBodyLimitBytes, BodyTooLargeError } from './body-cap.js';
 import {
   evaluateCaveats,
   CaveatError,
@@ -477,7 +478,15 @@ async function idempotencyWrap(req: Request, reqCtx: ReqContext, env: Env, run: 
   if (!reqCtx.idempotencyKey) {
     return errorResponse('bad_request', 'X-Fabric-Idempotency-Key is required on state-changing requests', 400);
   }
-  const body = new Uint8Array(await req.arrayBuffer());
+  let body: Uint8Array;
+  try {
+    body = await readBodyCapped(req, requestBodyLimitBytes(env));
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) {
+      return errorResponse('bad_request', 'request body exceeds size limit', 413);
+    }
+    throw e;
+  }
   const payloadHash = await sha256Hex(body);
   const lookup = await idempotencyLookup(env, reqCtx.idempotencyKey, reqCtx.grant.grantId, payloadHash);
   if (lookup.replay) {
