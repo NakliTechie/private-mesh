@@ -42,6 +42,17 @@ The wire protocol [`fabric-spec-001-v1.0.md`](docs/specs/fabric-spec-001-v1.0.md
 
 In M0 this runs each subdirectory's `smoke.sh` and prints `OK`. Real builds arrive at later milestones.
 
+## Security
+
+The two SDKs (`fabric-sdk-go` and `fabric-sdk-js`) are wire-compatible by contract. Cross-SDK interop gates live under [`scripts/`](scripts/):
+
+- [`scripts/m1-interop.sh`](scripts/m1-interop.sh) — basic FIF + macaroon round-trip between Go and JS.
+- [`scripts/m1-interop-nonce.sh`](scripts/m1-interop-nonce.sh) — AEAD nonce-rotation gate; each SDK re-serializes the other's FIF and the produced ciphertext must still decrypt, proving the new nonce is correctly bound via AAD.
+
+Both gates **must** be green before any change to a primitive (cryptographic envelope, on-wire format, macaroon mint/verify, FIF parse/serialize, vault/history event encoding) lands on `main`. See [CONTRIBUTING.md § Interop gate for primitives](CONTRIBUTING.md#interop-gate-for-primitives) for the full policy.
+
+Supply-chain hygiene: GitHub Actions are SHA-pinned and refreshed weekly by Dependabot (see [`.github/dependabot.yml`](.github/dependabot.yml)). All workflows run with `permissions: contents: read` to minimize the `GITHUB_TOKEN` scope.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

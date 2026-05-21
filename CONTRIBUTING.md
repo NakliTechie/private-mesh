@@ -37,6 +37,22 @@ These are repeated from the handoff and are non-negotiable. PRs that add any of 
 - **Commits.** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`). Reference the milestone in the subject where applicable.
 - **Comments.** Default to none. Add one only when *why* is non-obvious.
 
+## Interop gate for primitives
+
+The Go and JS SDKs are wire-compatible by contract, not by accident. Any patch that touches a **primitive** — the cryptographic envelope, on-wire format, macaroon mint/verify, FIF parse/serialize, vault/history event encoding, grant identifier or caveat syntax, sync push/pull payloads — MUST:
+
+1. **Add or extend a cross-SDK interop test.** Existing gates live under [`scripts/`](scripts/):
+   - [`m1-interop.sh`](scripts/m1-interop.sh) — basic FIF + macaroon round-trip between Go and JS.
+   - [`m1-interop-nonce.sh`](scripts/m1-interop-nonce.sh) — AEAD nonce-rotation gate: each SDK re-serializes the other's FIF and the produced ciphertext must still decrypt, proving the new nonce is correctly bound via AAD.
+
+   If the patch exercises a code path neither gate covers, add a new phase or a new gate script. Treat the gate set as a growing library; never delete a phase that caught a real bug.
+
+2. **Run both gates locally before opening the PR.** A red gate blocks merge.
+
+3. **List the primitives touched in the PR description**, so reviewers know which interop surface is in scope.
+
+Patches that only adjust internal helpers, per-SDK ergonomics, or non-wire concerns are exempt — but say so explicitly in the PR so it's a deliberate exemption, not an oversight.
+
 ## License
 
 By contributing you agree your contributions are licensed under [Apache-2.0](LICENSE).
