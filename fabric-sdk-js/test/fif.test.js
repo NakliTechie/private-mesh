@@ -119,6 +119,51 @@ describe('FIF envelope refusal (forward-compat hook)', () => {
   });
 });
 
+describe('FIF nonce freshness (regression for AEAD nonce reuse)', () => {
+  // Prior versions stored a single nonce at newFIF time and reused it on
+  // every serialize. Two snapshots under the same (key, nonce) leak the
+  // keystream and the Poly1305 MAC key.
+  it('emits a fresh nonce on every serialize, no mutation', async () => {
+    const fif = await newFIF('pass', sampleInner());
+    const bytes1 = fif.serialize();
+    const parsed1 = parseFIF(bytes1);
+    const nonce1 = parsed1.nonce;
+
+    const bytes2 = fif.serialize();
+    const parsed2 = parseFIF(bytes2);
+    const nonce2 = parsed2.nonce;
+
+    assert.notDeepEqual(nonce1, nonce2, 'nonce reused across serialize calls');
+    await parsed1.unlock('pass');
+    await parsed2.unlock('pass');
+  });
+
+  it('emits a fresh nonce after inner mutation, both snapshots decrypt', async () => {
+    const fif = await newFIF('pass', sampleInner());
+    const bytes1 = fif.serialize();
+
+    // Enrol a device subkey — the realistic mutation case.
+    fif.inner.device_subkeys.push({
+      device_id: '01JDEVICETESTULID0000001',
+      device_name: 'phone',
+      algorithm: 'ed25519',
+      public_key: randomBytes(32),
+      private_key: randomBytes(64),
+      enrolled_at: '2026-05-21T00:00:00Z',
+    });
+
+    const bytes2 = fif.serialize();
+    const parsed1 = parseFIF(bytes1);
+    const parsed2 = parseFIF(bytes2);
+    assert.notDeepEqual(parsed1.nonce, parsed2.nonce, 'nonce reused after inner mutation');
+
+    await parsed1.unlock('pass');
+    await parsed2.unlock('pass');
+    assert.equal(parsed1.inner.device_subkeys.length, 0);
+    assert.equal(parsed2.inner.device_subkeys.length, 1);
+  });
+});
+
 describe('FIF lock', () => {
   it('clears inner and forbids serialize', async () => {
     const fif = await newFIF('pass', sampleInner());
