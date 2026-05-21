@@ -229,9 +229,21 @@ func (s *Server) idempotencyMiddleware(endpoint string, next http.Handler) http.
 			writeError(w, r, http.StatusUnauthorized, ErrGrantMissing, "Grant context missing", false)
 			return
 		}
+		// Cap idempotency-middleware body reads so a single authenticated
+		// client cannot OOM the Hub with a multi-GB POST. The cap is
+		// generous: 2x MaxEventSizeBytes plus 256 KiB of headers / macaroon
+		// / wrapping JSON slop — large enough that legitimate vault events
+		// (already limited to MaxEventSizeBytes of ciphertext) survive
+		// base64 inflation, small enough that a single request cannot
+		// dominate available memory.
+		const headerSlop = 256 << 10
+		maxBody := s.cfg.Storage.MaxEventSizeBytes*2 + headerSlop
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeError(w, r, http.StatusBadRequest, ErrBadRequest, "could not read request body", false)
+			// http.MaxBytesReader returns *http.MaxBytesError on overflow,
+			// which writeError will translate to a normal error envelope.
+			writeError(w, r, http.StatusRequestEntityTooLarge, ErrBadRequest, "request body exceeds size limit", false)
 			return
 		}
 		_ = r.Body.Close()
