@@ -258,9 +258,17 @@ export class FIF {
     }
     const innerWire = dehydrateInnerBinary(this.inner);
     const innerJSON = enc.encode(JSON.stringify(innerWire));
+    // Fresh nonce on every serialize. XChaCha20-Poly1305 requires a unique
+    // nonce per key; reusing one across re-serializations (device enrolment,
+    // grant mint, state-cache update) would let two snapshots leak the
+    // keystream and forge the MAC. The new nonce lives in the header, which
+    // is the AAD, so it binds itself to the ciphertext.
+    const nonce = randomNonce();
+    this.nonce = nonce;
+    this.header.envelope_params.nonce = bytesToBase64(nonce);
     const headerJSON = enc.encode(JSON.stringify(this.header));
     const headerBytes = withLengthPrefix(headerJSON);
-    const ciphertext = seal(this.key, this.nonce, innerJSON, headerBytes);
+    const ciphertext = seal(this.key, nonce, innerJSON, headerBytes);
     const out = new Uint8Array(headerBytes.length + ciphertext.length);
     out.set(headerBytes, 0);
     out.set(ciphertext, headerBytes.length);
