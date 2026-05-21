@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # GitHub Actions are SHA-pinned for supply-chain safety. Dependabot
+  # refreshes the pins weekly so they don't rot.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
