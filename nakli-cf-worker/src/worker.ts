@@ -28,6 +28,7 @@ import {
   bytesToBase64,
   ParsedGrant,
 } from './macaroon.js';
+import { newNumericCode } from './numeric-code.js';
 import {
   evaluateCaveats,
   CaveatError,
@@ -554,7 +555,7 @@ async function handleIdentityPrincipal(reqCtx: ReqContext, env: Env): Promise<Re
 async function handlePairInitiate(req: Request, env: Env): Promise<Response> {
   const body = await req.json() as any;
   const token = ulid();
-  const numeric = Math.floor(100000 + Math.random() * 900000).toString();
+  const numeric = newNumericCode(6);
   const expiresAt = new Date(Date.now() + 600_000).toISOString();
   const rec = {
     token,
