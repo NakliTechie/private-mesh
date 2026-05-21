@@ -256,6 +256,17 @@ func (s *Server) handleVaultAppend(w http.ResponseWriter, r *http.Request) {
 			"namespace is reserved for the fabric and cannot be written by user principals", false)
 		return
 	}
+	// Auth check before any disk write. Earlier ordering wrote the blob
+	// first, leaving an orphan file under blobs/aa/bb/<event_id>.bin every
+	// time an unauthorized request was rejected — a disk-exhaustion DoS
+	// for any principal holding a scope-mismatched grant.
+	if err := s.checkAuth(w, r, scopeRequirement{
+		Primitive: "vault",
+		Namespace: req.Namespace,
+		Operation: "write",
+	}); err != nil {
+		return
+	}
 	ciphertext, err := base64.StdEncoding.DecodeString(req.Event.PayloadCiphertext)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "event.payload_ciphertext is not valid base64", false)
@@ -274,13 +285,6 @@ func (s *Server) handleVaultAppend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.checkAuth(w, r, scopeRequirement{
-		Primitive: "vault",
-		Namespace: req.Namespace,
-		Operation: "write",
-	}); err != nil {
-		return
-	}
 	g := grantFromCtx(ctx)
 
 	in := storage.AppendInput{
