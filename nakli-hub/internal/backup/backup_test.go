@@ -135,6 +135,80 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestBackupIncludesCrateBuckets confirms the crate_buckets table (added in
+// schema migration v3) survives the VACUUM INTO snapshot — the backup is a
+// whole-DB snapshot, but a regression test is cheap insurance against future
+// migration-table changes that might accidentally drop tables.
+func TestBackupIncludesCrateBuckets(t *testing.T) {
+	cfg := makeHubData(t)
+
+	// Reopen the store to seed a crate_buckets row, then close again so VACUUM
+	// INTO doesn't fight us. (makeHubData already closes its handle.)
+	store, err := storage.Open(cfg.SQLitePath(), cfg.BlobsPath())
+	if err != nil {
+		t.Fatalf("re-open store for seeding: %v", err)
+	}
+	const testBucketID = "01JFXAMPLEBUCKETBACK00001"
+	if err := store.CreateCrateBucket(t.Context(), storage.CrateBucket{
+		BucketID:              testBucketID,
+		Provider:              "r2",
+		AccountID:             "0123456789abcdef0123456789abcdef",
+		Region:                "auto",
+		BucketName:            "backup-test-bucket",
+		EndpointURL:           "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/backup-test-bucket",
+		AccessKeyID:           "AKIA-TEST-KEY",
+		SecretAccessKeySealed: []byte("sealed-secret-test-bytes"),
+		Nonce:                 []byte("0123456789012345678901234"), // 24 bytes
+		RegisteredByPrincipal: "01JFXAMPLEPRINCIPALBACK01",
+	}); err != nil {
+		t.Fatalf("CreateCrateBucket: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store before backup: %v", err)
+	}
+
+	archive := filepath.Join(t.TempDir(), "snapshot.tar.gz")
+	if _, err := backup.Create(backup.Inputs{
+		DataDir:      cfg.Hub.DataDir,
+		ConfigPath:   filepath.Join(cfg.Hub.DataDir, "config.json"),
+		IdentityPath: cfg.HubIdentityPath(),
+		SQLitePath:   cfg.SQLitePath(),
+		BlobsRoot:    cfg.BlobsPath(),
+	}, archive); err != nil {
+		t.Fatalf("backup.Create: %v", err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "restored")
+	if _, err := backup.Extract(archive, dest, false); err != nil {
+		t.Fatalf("backup.Extract: %v", err)
+	}
+
+	restored, err := storage.Open(filepath.Join(dest, "fabric.db"), filepath.Join(dest, "blobs"))
+	if err != nil {
+		t.Fatalf("re-open restored store: %v", err)
+	}
+	defer restored.Close()
+	got, err := restored.LookupCrateBucket(t.Context(), testBucketID)
+	if err != nil {
+		t.Fatalf("LookupCrateBucket on restored store: %v", err)
+	}
+	if got.BucketName != "backup-test-bucket" {
+		t.Errorf("bucket_name: got %q, want %q", got.BucketName, "backup-test-bucket")
+	}
+	if got.AccessKeyID != "AKIA-TEST-KEY" {
+		t.Errorf("access_key_id: got %q, want %q", got.AccessKeyID, "AKIA-TEST-KEY")
+	}
+	if string(got.SecretAccessKeySealed) != "sealed-secret-test-bytes" {
+		t.Errorf("secret_access_key_sealed survived but bytes differ: got %q", got.SecretAccessKeySealed)
+	}
+	if string(got.Nonce) != "0123456789012345678901234" {
+		t.Errorf("nonce: bytes differ: got %q", got.Nonce)
+	}
+	if got.RegisteredByPrincipal != "01JFXAMPLEPRINCIPALBACK01" {
+		t.Errorf("registered_by_principal: got %q", got.RegisteredByPrincipal)
+	}
+}
+
 func TestExtractRefusesNonEmptyDirWithoutForce(t *testing.T) {
 	cfg := makeHubData(t)
 	archive := filepath.Join(t.TempDir(), "snapshot.tar.gz")
