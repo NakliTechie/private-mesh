@@ -266,6 +266,110 @@ func assemble(hdrJSON, body []byte) []byte {
 	return out
 }
 
+// TestFIFNonceFreshOnEverySerialize is the regression test for the AEAD nonce
+// reuse bug: prior versions stored a single nonce in the envelope header at
+// NewFIF time and reused it on every Serialize. Two snapshots under the same
+// (key, nonce) leak the keystream and the Poly1305 MAC key.
+func TestFIFNonceFreshOnEverySerialize(t *testing.T) {
+	fif, err := NewFIF("pass", sampleInner(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First serialize.
+	var buf1 bytes.Buffer
+	if err := fif.Serialize(&buf1); err != nil {
+		t.Fatalf("Serialize #1: %v", err)
+	}
+	parsed1, err := ParseFIF(bytes.NewReader(buf1.Bytes()))
+	if err != nil {
+		t.Fatalf("ParseFIF #1: %v", err)
+	}
+	nonce1 := append([]byte(nil), parsed1.header.EnvelopeParams.Nonce...)
+
+	// Second serialize of the same FIF, no mutation.
+	var buf2 bytes.Buffer
+	if err := fif.Serialize(&buf2); err != nil {
+		t.Fatalf("Serialize #2: %v", err)
+	}
+	parsed2, err := ParseFIF(bytes.NewReader(buf2.Bytes()))
+	if err != nil {
+		t.Fatalf("ParseFIF #2: %v", err)
+	}
+	nonce2 := append([]byte(nil), parsed2.header.EnvelopeParams.Nonce...)
+
+	if bytes.Equal(nonce1, nonce2) {
+		t.Fatalf("nonce reused across Serialize calls: %x", nonce1)
+	}
+
+	// Both must still decrypt — the new nonce is bound via AAD.
+	if err := parsed1.Unlock("pass"); err != nil {
+		t.Errorf("Unlock snapshot #1: %v", err)
+	}
+	if err := parsed2.Unlock("pass"); err != nil {
+		t.Errorf("Unlock snapshot #2: %v", err)
+	}
+}
+
+// TestFIFNonceFreshAfterInnerMutation is the realistic case: the inner is
+// mutated (a device subkey is enrolled) between serializations, exactly as
+// happens during fif_enroll_device / fif_provision_agent / fif_retire_agent.
+func TestFIFNonceFreshAfterInnerMutation(t *testing.T) {
+	fif, err := NewFIF("pass", sampleInner(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf1 bytes.Buffer
+	if err := fif.Serialize(&buf1); err != nil {
+		t.Fatalf("Serialize #1: %v", err)
+	}
+
+	// Mutate: enrol a device subkey.
+	pub, priv, err := ed25519.GenerateKey(cryptorand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fif.Inner.DeviceSubkeys = append(fif.Inner.DeviceSubkeys, DeviceSubkey{
+		DeviceID:   "01JDEVICETESTULID0000001",
+		DeviceName: "phone",
+		Algorithm:  KeyAlgEd25519,
+		PublicKey:  pub,
+		PrivateKey: priv,
+		EnrolledAt: time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
+	})
+
+	var buf2 bytes.Buffer
+	if err := fif.Serialize(&buf2); err != nil {
+		t.Fatalf("Serialize #2: %v", err)
+	}
+
+	parsed1, err := ParseFIF(bytes.NewReader(buf1.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed2, err := ParseFIF(bytes.NewReader(buf2.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(parsed1.header.EnvelopeParams.Nonce, parsed2.header.EnvelopeParams.Nonce) {
+		t.Fatal("nonce reused after Inner mutation — AEAD catastrophe")
+	}
+
+	if err := parsed1.Unlock("pass"); err != nil {
+		t.Errorf("Unlock pre-mutation snapshot: %v", err)
+	}
+	if err := parsed2.Unlock("pass"); err != nil {
+		t.Errorf("Unlock post-mutation snapshot: %v", err)
+	}
+	if len(parsed1.Inner.DeviceSubkeys) != 0 {
+		t.Errorf("pre-mutation snapshot has %d device subkeys, want 0", len(parsed1.Inner.DeviceSubkeys))
+	}
+	if len(parsed2.Inner.DeviceSubkeys) != 1 {
+		t.Errorf("post-mutation snapshot has %d device subkeys, want 1", len(parsed2.Inner.DeviceSubkeys))
+	}
+}
+
 func TestSerializedFIFContainsHeaderFormat(t *testing.T) {
 	// Sanity check: ensure the on-wire header is JSON containing the format
 	// string, so other implementations can inspect it without unlocking.

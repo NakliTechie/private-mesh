@@ -226,6 +226,16 @@ func (f *FIF) Serialize(w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("marshal inner: %w", err)
 	}
+	// Fresh nonce on every Serialize. XChaCha20-Poly1305 requires a unique
+	// nonce per key; reusing one across re-serializations (device enrolment,
+	// grant mint, state-cache update) would let two snapshots leak the
+	// keystream and forge the MAC. The new nonce lives in the header, which
+	// is the AAD, so it binds itself to the ciphertext.
+	nonce, err := crypto.RandomNonce()
+	if err != nil {
+		return fmt.Errorf("random nonce: %w", err)
+	}
+	f.header.EnvelopeParams.Nonce = nonce
 	headerJSON, err := json.Marshal(f.header)
 	if err != nil {
 		return fmt.Errorf("marshal header: %w", err)
@@ -234,7 +244,7 @@ func (f *FIF) Serialize(w io.Writer) error {
 	binary.BigEndian.PutUint32(headerBytes[:4], uint32(len(headerJSON)))
 	copy(headerBytes[4:], headerJSON)
 
-	ciphertext, err := crypto.Seal(f.key, f.header.EnvelopeParams.Nonce, innerJSON, headerBytes)
+	ciphertext, err := crypto.Seal(f.key, nonce, innerJSON, headerBytes)
 	if err != nil {
 		return err
 	}
