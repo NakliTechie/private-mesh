@@ -206,6 +206,48 @@ func (s *Server) handleCrateBucketMetadata(w http.ResponseWriter, r *http.Reques
 	writeSuccess(w, r, http.StatusOK, resp, FreshnessNow(s.now()))
 }
 
+// --- GET /v1/crate/bucket -------------------------------------------------
+//
+// Lists all buckets registered by the calling principal. Used by the future
+// nakliOS "Connect Crate" Settings panel to surface "your buckets" in a
+// picker; also useful for `nakli-cli crate-bucket list` (deferred to M5+).
+// Auth: identity:pair (same as register — the principal owns these rows).
+
+type crateBucketListResp struct {
+	Buckets []crateBucketMetadataResp `json:"buckets"`
+}
+
+func (s *Server) handleCrateBucketList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "identity", Operation: "pair"}); err != nil {
+		return
+	}
+	g := grantFromCtx(ctx)
+	rows, err := s.store.ListCrateBucketsByPrincipal(ctx, g.Identifier.IssuedByPrincipal)
+	if err != nil {
+		s.logger.Error("ListCrateBucketsByPrincipal failed", "err", err)
+		writeError(w, r, http.StatusInternalServerError, ErrUnavailable, "bucket list failed", true)
+		return
+	}
+	out := crateBucketListResp{Buckets: make([]crateBucketMetadataResp, 0, len(rows))}
+	for _, b := range rows {
+		m := crateBucketMetadataResp{
+			BucketID:    b.BucketID,
+			Provider:    b.Provider,
+			Region:      b.Region,
+			BucketName:  b.BucketName,
+			EndpointURL: b.EndpointURL,
+			CreatedAt:   b.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if b.LastUsedAt != nil {
+			ts := b.LastUsedAt.UTC().Format(time.RFC3339Nano)
+			m.LastUsedAt = &ts
+		}
+		out.Buckets = append(out.Buckets, m)
+	}
+	writeSuccess(w, r, http.StatusOK, out, FreshnessNow(s.now()))
+}
+
 // --- HEAD / GET / PUT / DELETE /v1/crate/object/{bucket_id}/{path...} -------
 
 func (s *Server) handleCrateObject(w http.ResponseWriter, r *http.Request) {
@@ -344,13 +386,25 @@ func (s *Server) proxyToUpstream(
 		return
 	}
 
-	// Propagate Content-Type / Content-Length on PUT.
+	// Propagate Content-Type / Content-Length on PUT. Also propagate
+	// conditional headers (If-Match / If-None-Match) on PUT/DELETE — R2
+	// uses these for concurrent-write safety (see crate browser M6.x).
+	// We don't propagate If-Modified-Since for GET because we have no
+	// users of it yet; can add if needed.
 	if r.Method == http.MethodPut {
 		if ct := r.Header.Get("Content-Type"); ct != "" {
 			upstream.Header.Set("Content-Type", ct)
 		}
 		if r.ContentLength > 0 {
 			upstream.ContentLength = r.ContentLength
+		}
+	}
+	if r.Method == http.MethodPut || r.Method == http.MethodDelete {
+		if v := r.Header.Get("If-Match"); v != "" {
+			upstream.Header.Set("If-Match", v)
+		}
+		if v := r.Header.Get("If-None-Match"); v != "" {
+			upstream.Header.Set("If-None-Match", v)
 		}
 	}
 

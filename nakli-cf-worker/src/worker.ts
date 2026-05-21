@@ -63,6 +63,7 @@ import { ulid } from 'ulidx';
 import {
   handleCrateBucketRegister,
   handleCrateBucketMetadata,
+  handleCrateBucketList,
   handleCrateObject,
   handleCrateList,
 } from './crate-bucket.js';
@@ -199,6 +200,11 @@ async function route(method: string, path: string, url: URL, req: Request, env: 
   if (method === 'POST' && path === '/v1/crate/bucket/register')
     return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' },
       () => handleCrateBucketRegister(req, env, reqCtx.grant.identifier.issued_by_principal));
+  if (method === 'GET' && path === '/v1/crate/bucket') {
+    // List my buckets — auth uses identity:pair (same as register).
+    return await wrap(reqCtx, env, { primitive: 'identity', op: 'pair' },
+      () => handleCrateBucketList(env, reqCtx.grant.identifier.issued_by_principal));
+  }
   if (method === 'GET' && path.startsWith('/v1/crate/bucket/')) {
     const id = decodeURIComponent(path.slice('/v1/crate/bucket/'.length));
     return await wrap(reqCtx, env, { primitive: 'sync', op: 'read', namespace: id },

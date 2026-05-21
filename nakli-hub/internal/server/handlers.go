@@ -100,6 +100,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// query-string translation is non-trivial.
 	mux.Handle("POST /v1/crate/bucket/register",
 		s.authMiddleware(http.HandlerFunc(s.handleCrateBucketRegister)))
+	mux.Handle("GET /v1/crate/bucket",
+		s.authMiddleware(http.HandlerFunc(s.handleCrateBucketList)))
 	mux.Handle("GET /v1/crate/bucket/{bucket_id}",
 		s.authMiddleware(http.HandlerFunc(s.handleCrateBucketMetadata)))
 	mux.Handle("HEAD /v1/crate/object/{bucket_id}/{path...}",

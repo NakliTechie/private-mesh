@@ -422,6 +422,46 @@ export async function handleCrateBucketMetadata(bucketID: string, env: Env): Pro
   return successResponse(resp);
 }
 
+// handleCrateBucketList walks every crate-bucket:* KV key and returns the
+// buckets whose registered_by_principal matches the caller. KV's list()
+// is paginated; we paginate via cursor until exhausted.
+export async function handleCrateBucketList(env: Env, principalID: string): Promise<Response> {
+  const buckets: MetadataResp[] = [];
+  let cursor: string | undefined = undefined;
+  // Hard cap iterations so a runaway never hangs the request.
+  for (let i = 0; i < 50; i++) {
+    const opts: { prefix: string; cursor?: string } = { prefix: 'crate-bucket:' };
+    if (cursor) opts.cursor = cursor;
+    const page = await env.STATE.list(opts);
+    for (const key of page.keys) {
+      const raw = await env.STATE.get(key.name);
+      if (!raw) continue;
+      let rec: CrateBucketRecord;
+      try { rec = JSON.parse(raw) as CrateBucketRecord; } catch { continue; }
+      if (rec.registered_by_principal !== principalID) continue;
+      const m: MetadataResp = {
+        bucket_id: rec.bucket_id,
+        provider: rec.provider,
+        region: rec.region,
+        bucket_name: rec.bucket_name,
+        endpoint_url: rec.endpoint_url,
+        created_at: rec.created_at,
+      };
+      if (rec.last_used_at) m.last_used_at = rec.last_used_at;
+      buckets.push(m);
+    }
+    // KV's KVNamespaceListResult type is a discriminated union on
+    // list_complete; access `cursor` only when not complete.
+    if ('list_complete' in page && page.list_complete) break;
+    if ('cursor' in page && typeof page.cursor === 'string') {
+      cursor = page.cursor;
+    } else {
+      break;
+    }
+  }
+  return successResponse({ buckets });
+}
+
 // loadAndDecrypt returns the record + plaintext secret access key.
 async function loadAndDecrypt(env: Env, bucketID: string): Promise<{ rec: CrateBucketRecord; secret: string } | null> {
   const rec = await getCrateBucket(env, bucketID);
@@ -458,6 +498,15 @@ export async function handleCrateObject(
   if (req.method === 'PUT') {
     const ct = req.headers.get('Content-Type');
     if (ct) reqHeaders['Content-Type'] = ct;
+  }
+  // Propagate conditional headers on PUT/DELETE — R2 uses these for
+  // concurrent-write safety (crate browser M6.x). Mirrors the Hub's
+  // proxyToUpstream behaviour.
+  if (req.method === 'PUT' || req.method === 'DELETE') {
+    const ifMatch = req.headers.get('If-Match');
+    if (ifMatch) reqHeaders['If-Match'] = ifMatch;
+    const ifNoneMatch = req.headers.get('If-None-Match');
+    if (ifNoneMatch) reqHeaders['If-None-Match'] = ifNoneMatch;
   }
   const payloadHash = req.method === 'PUT' ? UNSIGNED_PAYLOAD : ''; // empty = empty-body SHA-256
 

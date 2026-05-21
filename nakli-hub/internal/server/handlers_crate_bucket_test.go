@@ -216,6 +216,14 @@ func (h *hubFixture) mintCrateSyncGrant(t *testing.T, bucketID string, ops []str
 func (h *hubFixture) registerBucket(t *testing.T, bucketName, accessKey, secretKey string) string {
 	t.Helper()
 	g := h.mintCrateBucketRegisterGrant(t)
+	return h.registerBucketWithGrant(t, bucketName, accessKey, secretKey, g)
+}
+
+// registerBucketWithGrant is like registerBucket but takes a caller-supplied
+// Grant — used in the list test so multiple register calls share a single
+// principal.
+func (h *hubFixture) registerBucketWithGrant(t *testing.T, bucketName, accessKey, secretKey, g string) string {
+	t.Helper()
 	// Override the endpoint_url so it lands on the rewriteTransport's path-style
 	// behavior — we use a real-looking R2 URL; the transport rewrites to fake.
 	endpoint := "https://62231b040ed00c96cdcf3a4541eab958.r2.cloudflarestorage.com/" + bucketName + "/"
@@ -420,5 +428,60 @@ func TestCrateBucket_Object_UnknownBucket404(t *testing.T) {
 		map[string]string{"X-Fabric-Grant": g})
 	if status != http.StatusNotFound {
 		t.Errorf("unknown bucket GET: expected 404, got %d", status)
+	}
+}
+
+// TestCrateBucket_List verifies GET /v1/crate/bucket returns all buckets
+// registered by the calling principal — used by future nakliOS Settings
+// "your buckets" UI.
+//
+// Critical: ALL THREE calls (two registers + one list) reuse the SAME
+// Grant so they share a principal. The list endpoint filters by
+// principal — different grants → different principals → empty list.
+func TestCrateBucket_List(t *testing.T) {
+	h := newHubFixture(t)
+	f := newFakeR2(t)
+	h.withFakeR2(t, f)
+
+	g := h.mintCrateBucketRegisterGrant(t)
+	id1 := h.registerBucketWithGrant(t, "alpha-bucket", "ak1", "sk1", g)
+	id2 := h.registerBucketWithGrant(t, "beta-bucket", "ak2", "sk2", g)
+
+	status, body := h.do(t, "GET", "/v1/crate/bucket", nil, map[string]string{
+		"X-Fabric-Grant": g,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("list: status=%d body=%s", status, body)
+	}
+	for _, want := range []string{id1, id2, `"provider":"r2"`, `"region":"auto"`, `"bucket_name":"alpha-bucket"`, `"bucket_name":"beta-bucket"`} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Errorf("list body missing %q; got %s", want, body)
+		}
+	}
+}
+
+// TestCrateBucket_List_ScopesByPrincipal confirms that the list endpoint
+// only returns buckets owned by the calling principal, not someone else's.
+func TestCrateBucket_List_ScopesByPrincipal(t *testing.T) {
+	h := newHubFixture(t)
+	f := newFakeR2(t)
+	h.withFakeR2(t, f)
+
+	g1 := h.mintCrateBucketRegisterGrant(t)
+	g2 := h.mintCrateBucketRegisterGrant(t)
+	id1 := h.registerBucketWithGrant(t, "alpha-bucket", "ak1", "sk1", g1)
+	_ = h.registerBucketWithGrant(t, "beta-bucket", "ak2", "sk2", g2)
+
+	status, body := h.do(t, "GET", "/v1/crate/bucket", nil, map[string]string{
+		"X-Fabric-Grant": g1,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("list: status=%d body=%s", status, body)
+	}
+	if !bytes.Contains(body, []byte(id1)) {
+		t.Errorf("list should include caller's bucket %s; got %s", id1, body)
+	}
+	if bytes.Contains(body, []byte(`"bucket_name":"beta-bucket"`)) {
+		t.Errorf("list should NOT include other principal's bucket; got %s", body)
 	}
 }
