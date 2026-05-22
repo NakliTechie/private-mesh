@@ -6,5 +6,15 @@ cd "$(dirname "$0")"
 if [[ ! -d node_modules ]]; then
   pnpm install --silent > /dev/null
 fi
-PASS_COUNT=$(pnpm test 2>&1 | awk '/^ℹ pass / {print $3}')
+# Capture full output so we can both extract PASS_COUNT and print the raw
+# log on failure. The earlier `pnpm test 2>&1 | awk` form swallowed all
+# test output, leaving build-all failures invisible in CI.
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+if ! pnpm test > "$out" 2>&1; then
+  echo "FAIL: fabric-sdk-js — pnpm test exited non-zero"
+  cat "$out"
+  exit 1
+fi
+PASS_COUNT=$(awk '/^ℹ pass / {print $3}' "$out")
 echo "OK: fabric-sdk-js (${PASS_COUNT:-?} tests passing)"
