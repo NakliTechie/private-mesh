@@ -41,12 +41,17 @@ func (b *rateBucket) take(now time.Time) bool {
 
 // rateConsume looks up or creates the bucket for (grantID, capacity, window)
 // and consumes one token. Returns true if allowed.
+//
+// rateBuckets is LRU-capped (rateBucketLRUSize). When the cap is hit the
+// least-recently-used grant's bucket is evicted — the next request from
+// that grant gets a fresh bucket (full quota), slightly over-permissive
+// at the eviction boundary but bounded memory beats unbounded growth.
 func (s *Server) rateConsume(grantID string, capacity int, window time.Duration) bool {
 	if capacity <= 0 || window <= 0 {
 		return true
 	}
 	s.rateMu.Lock()
-	b, ok := s.rateBuckets[grantID]
+	b, ok := s.rateBuckets.Get(grantID)
 	if !ok || b.capacity != capacity || b.window != window {
 		b = &rateBucket{
 			capacity:   capacity,
@@ -54,7 +59,7 @@ func (s *Server) rateConsume(grantID string, capacity int, window time.Duration)
 			tokens:     float64(capacity),
 			lastRefill: s.now(),
 		}
-		s.rateBuckets[grantID] = b
+		s.rateBuckets.Add(grantID, b)
 	}
 	s.rateMu.Unlock()
 	return b.take(s.now())
@@ -66,26 +71,27 @@ type cachedDischarge struct {
 	expires time.Time
 }
 
-// dischargeRemember stores a parsed discharge macaroon under its caveat id.
+// dischargeRemember stores a parsed discharge macaroon under its caveat
+// id. The cache key is an attacker-controlled URL string (the verifier
+// url from `discharge-from <url>`), which is why the LRU cap matters:
+// without it, an attacker can send unbounded distinct discharge URLs to
+// grow the cache. The LRU itself is internally thread-safe; no mutex
+// needed.
 func (s *Server) dischargeRemember(caveatID string, mac []byte, ttl time.Duration) {
-	s.dischargeMu.Lock()
-	defer s.dischargeMu.Unlock()
-	s.dischargeCache[caveatID] = cachedDischarge{
+	s.dischargeCache.Add(caveatID, cachedDischarge{
 		mac:     append([]byte(nil), mac...),
 		expires: s.now().Add(ttl),
-	}
+	})
 }
 
 // dischargeLookup returns a stored discharge if present and unexpired.
 func (s *Server) dischargeLookup(caveatID string) ([]byte, bool) {
-	s.dischargeMu.Lock()
-	defer s.dischargeMu.Unlock()
-	d, ok := s.dischargeCache[caveatID]
+	d, ok := s.dischargeCache.Get(caveatID)
 	if !ok {
 		return nil, false
 	}
 	if s.now().After(d.expires) {
-		delete(s.dischargeCache, caveatID)
+		s.dischargeCache.Remove(caveatID)
 		return nil, false
 	}
 	return d.mac, true

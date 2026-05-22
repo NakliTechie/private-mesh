@@ -94,16 +94,32 @@ interface ReqContext {
   dischargeCache: Set<string>;
 }
 
-// rateBuckets is *per Worker isolate*. Multiple isolates → per-isolate
-// limit, which is sufficient at personal scale; we document this.
+// rateBuckets is *per Worker isolate* AND LRU-capped. JS Map iterates in
+// insertion order, so an LRU is just: on get, delete + re-set to move
+// to the back; on overflow, drop the front (oldest). The previous plain
+// Map grew without bound — an attacker minting many short-lived grants
+// could grow it indefinitely. RATE_BUCKETS_MAX is intentionally small;
+// the Worker isolate's memory budget is tight.
+const RATE_BUCKETS_MAX = 10_000;
 const rateBuckets = new Map<string, { capacity: number; windowMs: number; tokens: number; lastRefill: number }>();
 
 function rateConsume(grantId: string, capacity: number, windowMs: number): boolean {
   const now = Date.now();
   let b = rateBuckets.get(grantId);
+  if (b) {
+    // Touch: move to back so this entry isn't the next eviction victim.
+    rateBuckets.delete(grantId);
+  }
   if (!b || b.capacity !== capacity || b.windowMs !== windowMs) {
     b = { capacity, windowMs, tokens: capacity, lastRefill: now };
-    rateBuckets.set(grantId, b);
+  }
+  rateBuckets.set(grantId, b);
+  // Evict the oldest until we're within the cap. Cheap: at most one
+  // eviction per insert in steady state.
+  while (rateBuckets.size > RATE_BUCKETS_MAX) {
+    const oldest = rateBuckets.keys().next().value;
+    if (oldest === undefined) break;
+    rateBuckets.delete(oldest);
   }
   const elapsed = now - b.lastRefill;
   if (elapsed > 0) {
