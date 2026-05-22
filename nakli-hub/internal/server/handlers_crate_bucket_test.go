@@ -285,6 +285,62 @@ func TestCrateBucket_RegisterAndMetadata(t *testing.T) {
 	}
 }
 
+// TestCrateBucket_Register_IgnoresAttackerEndpointURL is the security
+// regression for the SSRF the audit flagged: a principal with
+// identity:pair scope used to be able to register a "bucket" whose
+// endpoint_url pointed at internal services (AWS metadata, loopback,
+// etc.) and read the proxied response via /v1/crate/object. The handler
+// now always derives the endpoint from EndpointForProvider; any caller-
+// supplied endpoint_url is silently overridden.
+func TestCrateBucket_Register_IgnoresAttackerEndpointURL(t *testing.T) {
+	h := newHubFixture(t)
+	g := h.mintCrateBucketRegisterGrant(t)
+
+	// Try to register with endpoint_url pointing at the AWS instance
+	// metadata service. The Hub should accept the registration (201)
+	// but the stored endpoint must be the derived R2 URL — NOT the
+	// attacker's metadata IP.
+	const attackerURL = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+	status, body := h.do(t, "POST", "/v1/crate/bucket/register", map[string]any{
+		"provider":     "r2",
+		"account_id":   "62231b040ed00c96cdcf3a4541eab958",
+		"region":       "auto",
+		"bucket_name":  "test-bucket",
+		"access_key":   "ak",
+		"secret_key":   "sk",
+		"endpoint_url": attackerURL,
+	}, map[string]string{"X-Fabric-Grant": g})
+	if status != http.StatusCreated {
+		t.Fatalf("register: status=%d body=%s", status, body)
+	}
+	var env successEnv
+	if err := jsonUnmarshalTest(body, &env); err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		BucketID string `json:"bucket_id"`
+	}
+	if err := jsonUnmarshalTest(env.Data, &data); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the registration back via metadata and confirm the stored
+	// endpoint is the derived R2 URL, not the attacker's URL.
+	gr := h.mintCrateSyncGrant(t, data.BucketID, []string{"read", "write"})
+	status, body = h.do(t, "GET", "/v1/crate/bucket/"+data.BucketID, nil, map[string]string{
+		"X-Fabric-Grant": gr,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("metadata: status=%d body=%s", status, body)
+	}
+	if bytes.Contains(body, []byte("169.254.169.254")) {
+		t.Errorf("stored endpoint includes attacker URL: %s", body)
+	}
+	if !bytes.Contains(body, []byte("r2.cloudflarestorage.com")) {
+		t.Errorf("stored endpoint is not the derived R2 URL: %s", body)
+	}
+}
+
 func TestCrateBucket_Register_RejectsMissingFields(t *testing.T) {
 	h := newHubFixture(t)
 	g := h.mintCrateBucketRegisterGrant(t)
