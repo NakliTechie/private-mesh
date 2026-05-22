@@ -3,6 +3,19 @@
 // Encryption is transparent: callers pass plaintext to `append`; the SDK
 // derives a namespace key from the FIF root keypair seed, encrypts with
 // XChaCha20-Poly1305, and sends ciphertext. On read, the SDK decrypts.
+//
+// SECURITY (P2 #21): the seal/open paths bind ciphertext to its host
+// stream via AAD = SHA-256(namespace || 0x1F || stream_id || 0x1F ||
+// canonical-JSON(vector_clock)). Pre-fix the SDK passed null AAD, so a
+// transport could swap a ciphertext from one namespace/stream into
+// another and the client would decrypt successfully — silently
+// reattributing payloads.
+//
+// The spec previously claimed `AAD = namespace || stream_id || event_id
+// || vector_clock_hash`, but event_id is server-issued (not known at
+// encrypt time). The spec is updated alongside this commit to drop
+// event_id from the binding for v1.0; full event_id binding moves to
+// v1.x with client-generated event_id, tracked in plan/pending.md.
 
 import { seal, open as openCipher, randomNonce, NONCE_SIZE } from './crypto.js';
 import { deriveVaultKey } from './keys.js';
@@ -12,6 +25,34 @@ import { IdentityLockedError, VaultDecryptionError } from './errors.js';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder('utf-8', { fatal: true });
+
+// vaultEventAAD returns the 32-byte SHA-256 binding namespace, stream_id,
+// and the vector clock. Both seal (append) and open (read) MUST compute
+// from the same authoritative inputs; any mismatch on read means the
+// transport returned a ciphertext that doesn't belong to (namespace,
+// stream_id, vector_clock) and decryption fails.
+async function vaultEventAAD(namespace, streamId, vectorClock) {
+  const sep = new Uint8Array([0x1F]); // ASCII Unit Separator
+  const vcJSON = JSON.stringify(vectorClock ?? {});
+  const buf = concatBytes(
+    enc.encode(namespace),
+    sep,
+    enc.encode(streamId),
+    sep,
+    enc.encode(vcJSON),
+  );
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return new Uint8Array(digest);
+}
+
+function concatBytes(...parts) {
+  let total = 0;
+  for (const p of parts) total += p.byteLength;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.byteLength; }
+  return out;
+}
 
 export class VaultAPI {
   /**
@@ -53,7 +94,8 @@ export class VaultAPI {
     const key = await this._getKey(spec.namespace);
     const plaintext = encodePayload(spec.event.payload);
     const nonce = randomNonce();
-    const cipher = seal(key, nonce, plaintext, null);
+    const aad = await vaultEventAAD(spec.namespace, spec.streamId, spec.event.vectorClock);
+    const cipher = seal(key, nonce, plaintext, aad);
     // Wire format: nonce || ciphertext (so the reader can split).
     const wire = new Uint8Array(NONCE_SIZE + cipher.length);
     wire.set(nonce, 0);
@@ -111,7 +153,13 @@ export class VaultAPI {
         if (wire.length < NONCE_SIZE) throw new Error('payload too short');
         const nonce = wire.slice(0, NONCE_SIZE);
         const cipher = wire.slice(NONCE_SIZE);
-        const plaintext = openCipher(key, nonce, cipher, null);
+        // Recompute the AAD from the event's claimed (namespace,
+        // stream_id, vector_clock). If the transport swapped a
+        // ciphertext from a different stream into this response, the
+        // AAD won't match and open throws — caught below as
+        // VaultDecryptionError.
+        const aad = await vaultEventAAD(namespace, streamId, ev.vector_clock ?? {});
+        const plaintext = openCipher(key, nonce, cipher, aad);
         events.push({
           eventId: ev.event_id,
           kind: ev.kind,
