@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -151,7 +150,10 @@ func (a *Adapter) doJSON(ctx context.Context, u string) (*bridge.CallResponse, e
 		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := bridge.ReadBodyCapped(resp.Body, bridge.DefaultResponseLimitBytes)
+	if readErr != nil {
+		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, readErr)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("%w: %s returned %d", bridge.ErrUpstreamUnavailable, u, resp.StatusCode)
 	}
