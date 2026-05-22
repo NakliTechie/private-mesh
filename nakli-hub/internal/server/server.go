@@ -6,11 +6,23 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/local"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/config"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/hubid"
 	"github.com/NakliTechie/private-mesh/nakli-hub/internal/storage"
+)
+
+// Bounds on the in-memory rate-limit + discharge-cache LRU maps. Before
+// these were unbounded plain maps — an attacker could mint many
+// short-lived grants, hit the rate-bucket / discharge code path once
+// per grant, and grow the maps without limit. 10k entries is generous
+// for legitimate concurrent grant volume on a single Hub.
+const (
+	rateBucketLRUSize    = 10_000
+	dischargeCacheLRUSize = 10_000
 )
 
 // Server is the Hub's HTTP application. Build with New; mount Handler() on
@@ -25,12 +37,16 @@ type Server struct {
 	binVer  string
 
 	// rateBuckets tracks per-grant token buckets for the `rate` caveat.
+	// LRU-capped so an attacker minting many grants cannot grow the map
+	// unbounded. The LRU is internally thread-safe; rateMu only guards
+	// the get-or-create critical section.
 	rateMu      sync.Mutex
-	rateBuckets map[string]*rateBucket
+	rateBuckets *lru.Cache[string, *rateBucket]
 
-	// dischargeCache stores verified discharge macaroons by third-party caveat id.
-	dischargeMu    sync.Mutex
-	dischargeCache map[string]cachedDischarge
+	// dischargeCache stores verified discharge macaroons by third-party
+	// caveat id (an attacker-controlled URL string). LRU-capped for the
+	// same reason as rateBuckets.
+	dischargeCache *lru.Cache[string, cachedDischarge]
 
 	// peerURLs is the list of remote peers `/health` probes for the `degraded`
 	// flag. Real multi-peer sync lands at M7; M3 uses this only to satisfy
@@ -67,6 +83,16 @@ func New(cfg *config.Config, store *storage.Store, id *hubid.Identity, logger *s
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// The LRU constructor only fails on size<=0, so a panic-on-error
+	// is appropriate (and shorter than threading the error to callers).
+	rb, err := lru.New[string, *rateBucket](rateBucketLRUSize)
+	if err != nil {
+		panic("server.New: rateBuckets LRU: " + err.Error())
+	}
+	dc, err := lru.New[string, cachedDischarge](dischargeCacheLRUSize)
+	if err != nil {
+		panic("server.New: dischargeCache LRU: " + err.Error())
+	}
 	return &Server{
 		cfg:            cfg,
 		store:          store,
@@ -75,8 +101,8 @@ func New(cfg *config.Config, store *storage.Store, id *hubid.Identity, logger *s
 		now:            time.Now,
 		startAt:        time.Now(),
 		binVer:         binaryVersion,
-		rateBuckets:    map[string]*rateBucket{},
-		dischargeCache: map[string]cachedDischarge{},
+		rateBuckets:    rb,
+		dischargeCache: dc,
 	}
 }
 
