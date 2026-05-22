@@ -121,6 +121,26 @@ type ExtractResult struct {
 	BlobsWritten int64
 }
 
+// Caps for Extract — defend against decompression bombs in attacker-
+// supplied archives. Per-entry cap is 2 GiB (large enough for any
+// honest blob); aggregate cap is 50 GiB (enough for a fat Hub but
+// nowhere near "fills the disk"). Vars (not consts) so tests can swap
+// them in without generating multi-GB fixtures. Operators with truly
+// enormous backups should tune these or migrate to ExtractOpts in a
+// future PR.
+var (
+	defaultMaxEntryBytes     int64 = 2 << 30  // 2 GiB
+	defaultMaxAggregateBytes int64 = 50 << 30 // 50 GiB
+)
+
+// ErrEntryTooLarge is returned when a single tar entry exceeds the per-
+// entry cap; ErrArchiveTooLarge fires when the aggregate decompressed
+// size exceeds the budget. Both are wrapped with the entry name.
+var (
+	ErrEntryTooLarge   = errors.New("backup.Extract: tar entry exceeds per-entry size cap")
+	ErrArchiveTooLarge = errors.New("backup.Extract: archive exceeds aggregate decompressed size cap")
+)
+
 func Extract(archivePath, outDir string, force bool) (*ExtractResult, error) {
 	if err := requireFile(archivePath, "archive"); err != nil {
 		return nil, err
@@ -152,6 +172,7 @@ func Extract(archivePath, outDir string, force bool) (*ExtractResult, error) {
 
 	res := &ExtractResult{}
 	manifestSeen := false
+	var aggregateBytes int64
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -179,9 +200,25 @@ func Extract(archivePath, outDir string, force bool) (*ExtractResult, error) {
 			if err != nil {
 				return nil, err
 			}
-			if _, err := io.Copy(out, tr); err != nil {
+			// SECURITY: bound the per-entry decompressed size to defeat
+			// gzip bombs. Read max+1 via LimitReader; if we got more
+			// than max bytes, the file was over-budget. Aggregate budget
+			// is tracked across entries to also catch many-small-files
+			// bombs.
+			limited := io.LimitReader(tr, defaultMaxEntryBytes+1)
+			written, copyErr := io.Copy(out, limited)
+			if copyErr != nil {
 				_ = out.Close()
-				return nil, err
+				return nil, copyErr
+			}
+			if written > defaultMaxEntryBytes {
+				_ = out.Close()
+				return nil, fmt.Errorf("%w: %s (%d bytes > %d)", ErrEntryTooLarge, clean, written, defaultMaxEntryBytes)
+			}
+			aggregateBytes += written
+			if aggregateBytes > defaultMaxAggregateBytes {
+				_ = out.Close()
+				return nil, fmt.Errorf("%w: %d bytes > %d", ErrArchiveTooLarge, aggregateBytes, defaultMaxAggregateBytes)
 			}
 			if err := out.Close(); err != nil {
 				return nil, err
