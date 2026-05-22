@@ -335,6 +335,31 @@ func runServe(args []string) int {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Periodic idempotency GC. Reclaims expired rows so the table doesn't
+	// grow without bound. Lookup already filters expired rows, so the GC
+	// is housekeeping for disk and SQLite vacuum efficiency — not
+	// correctness. Hourly tick: enough to keep the table small without
+	// hammering writes.
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				gcCtx, gcCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				if n, err := store.DeleteExpiredIdempotency(gcCtx); err != nil {
+					logger.Warn("idempotency GC failed", "err", err)
+				} else if n > 0 {
+					logger.Info("idempotency GC reclaimed rows", "n", n)
+				}
+				gcCancel()
+			}
+		}
+	}()
+
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutting down", "hub_id", id.HubID)
