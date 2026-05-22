@@ -18,13 +18,27 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/local"
 )
+
+// defaultAllowedOrigins enumerates the consumer-tool surfaces that may
+// fetch the bridge's HTTP API from a browser. Other origins (a random
+// site the user happens to visit) MUST be refused, otherwise they could
+// fingerprint the user's mesh by issuing fetch("http://127.0.0.1:7849/local/peers").
+// Override with --allow-origin flags (comma-separated or repeatable).
+// http://localhost and http://127.0.0.1 are matched on host alone so
+// any port works for local dev.
+var defaultAllowedOrigins = []string{
+	"https://crate.naklios.dev",
+	"https://naklios.dev",
+}
 
 // BinaryVersion is set via -ldflags at release time.
 var BinaryVersion = "0.1.0-alpha.0"
@@ -37,7 +51,20 @@ func main() {
 	instance := flag.String("instance", "nakli-local-bridge", "mDNS instance name when --announce")
 	announcePort := flag.Int("announce-port", 7849, "port to advertise in the mDNS TXT (typically same as --listen's port)")
 	verbose := flag.Bool("verbose", false, "log peer changes to stderr")
+	allowOrigins := flag.String("allow-origin", "",
+		"comma-separated CORS Origin allowlist (extends the built-in defaults: "+
+			"https://crate.naklios.dev, https://naklios.dev, plus http://localhost and http://127.0.0.1 on any port)")
 	flag.Parse()
+
+	allowed := append([]string{}, defaultAllowedOrigins...)
+	if *allowOrigins != "" {
+		for _, o := range strings.Split(*allowOrigins, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowed = append(allowed, o)
+			}
+		}
+	}
 
 	browser := local.NewBrowser()
 	if err := browser.Start(context.Background()); err != nil {
@@ -105,7 +132,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *listen,
-		Handler:           withCORS(mux),
+		Handler:           withCORS(mux, allowed),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -143,11 +170,22 @@ func notImplemented(msg string) http.HandlerFunc {
 	}
 }
 
-// withCORS is permissive on purpose — the bridge talks to localhost browser
-// tabs on arbitrary origins.
-func withCORS(next http.Handler) http.Handler {
+// withCORS restricts Access-Control-Allow-Origin to a configured
+// allowlist (defaultAllowedOrigins + --allow-origin overrides). Earlier
+// the bridge served `*`, so a random site the user happened to visit
+// could fingerprint the local mesh via fetch("http://127.0.0.1:7849/local/peers").
+// Requests with no Origin header (curl, server-side callers) are still
+// served — only CORS-relevant browser requests are gated.
+//
+// localhost / 127.0.0.1 are matched on host alone so dev consumers on
+// any port (5173, 8000, etc.) work without explicit configuration.
+func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if origin != "" && originAllowed(origin, allowedOrigins) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -156,4 +194,26 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// originAllowed reports whether the given Origin matches the allowlist.
+// Exact-match for any non-loopback entry; loopback entries (any port on
+// localhost or 127.0.0.1) match by host alone.
+func originAllowed(origin string, allowed []string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" {
+		// Allow any port on localhost so dev consumers don't need
+		// per-port config in the common case.
+		return true
+	}
+	for _, a := range allowed {
+		if a == origin {
+			return true
+		}
+	}
+	return false
 }
