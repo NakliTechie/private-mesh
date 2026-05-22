@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -443,6 +444,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	g := grantFromCtx(ctx)
 	var req syncPushReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "request body is not valid JSON", false)
@@ -454,11 +456,54 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			resp.Skipped++
 			continue
 		}
+		// SECURITY (P1 #12 part 1): when StrictSyncPushAttribution is on,
+		// reject any event whose claimed appended_by_principal is not the
+		// sender's authenticated grant principal. Without this, a peer
+		// holding a delegated sync:push grant can forge attribution.
+		// Default off preserves multi-master federation. Full
+		// ed25519-per-event signature verification is the deferred
+		// protocol-level fix tracked in plan/pending.md.
+		if s.cfg.Auth.StrictSyncPushAttribution && g != nil && ev.AppendedByPrincipal != "" && ev.AppendedByPrincipal != g.Identifier.IssuedByPrincipal {
+			resp.Skipped++
+			resp.Errors = append(resp.Errors,
+				"attribution mismatch for "+ev.EventID+": appended_by_principal does not match sender's grant")
+			continue
+		}
 		ciphertext, err := decodeStdBase64(ev.PayloadCiphertext)
 		if err != nil {
 			resp.Skipped++
 			resp.Errors = append(resp.Errors, "bad ciphertext for "+ev.EventID)
 			continue
+		}
+		// SECURITY (P1 #12 part 2): for history streams the receiver MUST
+		// recompute event_hash from (previous_event_hash || event_id ||
+		// kind || payload_metadata || causal_deps) and reject mismatches.
+		// Otherwise a sync:push holder can wedge a forged hash into the
+		// audit trail; later /history/verify will report verified:false
+		// blaming the wrong stream. This applies to history streams only
+		// — vault streams are addressed by event_id alone, no chain.
+		var prevHash []byte
+		if ev.PreviousEventHash != "" {
+			prevHash, _ = decodeStdBase64(ev.PreviousEventHash)
+		}
+		var claimedHash []byte
+		if ev.EventHash != "" {
+			claimedHash, _ = decodeStdBase64(ev.EventHash)
+		}
+		if ev.StreamType == "history" {
+			recomputed := storage.ComputeHistoryEventHash(
+				prevHash, ev.EventID, ev.Kind, string(ev.PayloadMetadata), jsonStringArray(ev.CausalDependencies),
+			)
+			if len(claimedHash) > 0 && !bytes.Equal(claimedHash, recomputed) {
+				resp.Skipped++
+				resp.Errors = append(resp.Errors,
+					"event_hash mismatch for "+ev.EventID+": chain integrity check failed")
+				continue
+			}
+			// Either the sender omitted the hash or it matched — either way
+			// store the locally-recomputed one so downstream readers see
+			// the canonical value.
+			claimedHash = recomputed
 		}
 		blobPath, err := s.store.WriteBlob(ev.Namespace, ev.EventID, ciphertext, s.cfg.Storage.FsyncWrites)
 		if err != nil {
@@ -477,16 +522,10 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			PayloadMetadata:     string(ev.PayloadMetadata),
 			CausalDependencies:  jsonStringArray(ev.CausalDependencies),
 			VectorClock:         jsonStringMap(ev.VectorClock),
-			PreviousEventHash:   nil,
-			EventHash:           nil,
+			PreviousEventHash:   prevHash,
+			EventHash:           claimedHash,
 			AppendedByPrincipal: ev.AppendedByPrincipal,
 			AppendedByGrantID:   ev.AppendedByGrantID,
-		}
-		if ev.PreviousEventHash != "" {
-			in.PreviousEventHash, _ = decodeStdBase64(ev.PreviousEventHash)
-		}
-		if ev.EventHash != "" {
-			in.EventHash, _ = decodeStdBase64(ev.EventHash)
 		}
 		if t, err := time.Parse(time.RFC3339Nano, ev.AppendedAt); err == nil {
 			in.AppendedAt = t
