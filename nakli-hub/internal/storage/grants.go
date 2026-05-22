@@ -80,6 +80,49 @@ func (s *Store) MarkGrantRevoked(ctx context.Context, grantID, revocationEventID
 	return nil
 }
 
+// GetKnownGrant returns the grants_known row for grantID. The boolean is
+// false (with nil error) when the grant has never been seen — callers
+// MUST treat this as "unknown ownership" and reject any operation that
+// requires verifying the issuer/recipient.
+func (s *Store) GetKnownGrant(ctx context.Context, grantID string) (KnownGrant, bool, error) {
+	var (
+		g          KnownGrant
+		issuedAt   string
+		expiresAt  string
+		revokedAt  string
+	)
+	err := s.db.QueryRowContext(ctx, `
+        SELECT grant_id, issued_by_principal, recipient_principal,
+               COALESCE(parent_grant_id, ''), scope, caveats,
+               issued_at, expires_at, COALESCE(revoked_at, ''),
+               COALESCE(revocation_event_id, '')
+        FROM grants_known WHERE grant_id = ?`,
+		grantID,
+	).Scan(
+		&g.GrantID, &g.IssuedByPrincipal, &g.RecipientPrincipal,
+		&g.ParentGrantID, &g.ScopeJSON, &g.CaveatsJSON,
+		&issuedAt, &expiresAt, &revokedAt, &g.RevocationEventID,
+	)
+	if errors.Is(err, ErrNotFound) || isNoRows(err) {
+		return KnownGrant{}, false, nil
+	}
+	if err != nil {
+		return KnownGrant{}, false, fmt.Errorf("GetKnownGrant: %w", err)
+	}
+	if t, perr := time.Parse(time.RFC3339Nano, issuedAt); perr == nil {
+		g.IssuedAt = t
+	}
+	if t, perr := time.Parse(time.RFC3339Nano, expiresAt); perr == nil {
+		g.ExpiresAt = t
+	}
+	if revokedAt != "" {
+		if t, perr := time.Parse(time.RFC3339Nano, revokedAt); perr == nil {
+			g.RevokedAt = &t
+		}
+	}
+	return g, true, nil
+}
+
 // IsGrantRevoked reports whether a grant has been recorded as revoked.
 func (s *Store) IsGrantRevoked(ctx context.Context, grantID string) (bool, error) {
 	var revoked string

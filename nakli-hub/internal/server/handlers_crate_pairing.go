@@ -398,11 +398,17 @@ func (s *Server) handleCapabilityRevoke(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "capability id is required", false)
 		return
 	}
-	// Auth: any authenticated principal can request revocation; the spec
-	// expects this to be the user via the browser. Future hardening could
-	// require the request to be co-signed by the Identity that issued the
-	// capability — out of scope for v1.0.
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "grant", Operation: "revoke"}); err != nil {
+		return
+	}
+	// Ownership check: the requester must be either the issuer or the
+	// recipient of the capability being revoked. Without this, any
+	// principal holding any `grant:revoke`-scoped grant could revoke
+	// every capability in the Hub — a trivial DoS against legitimate
+	// principals. Capabilities minted via the crate-pairing flow are
+	// always recorded in grants_known via RememberGrant; capabilities
+	// the Hub has never seen fail closed (rejected as not-found).
+	if err := s.requireGrantOwnership(w, r, id); err != nil {
 		return
 	}
 	// Reuse the existing grant-revocation plumbing: writes a stub row to

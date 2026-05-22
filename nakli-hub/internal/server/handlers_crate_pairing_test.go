@@ -6,6 +6,7 @@
 package server_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	cryptorand "crypto/rand"
 	"encoding/base64"
@@ -359,12 +360,18 @@ func TestCratePairing_CancelThenRedeem(t *testing.T) {
 
 // mintCapabilityForDaemon produces a sync-scope macaroon as if it had come
 // from /v1/pairing/redeem, so we can exercise refresh + revoke without going
-// through the full pairing flow.
+// through the full pairing flow. The real flow records the capability via
+// RememberGrant; mirror that here so ownership-aware paths (revoke) work.
 func (h *hubFixture) mintCapabilityForDaemon(t *testing.T, daemonPubkey string) (string, string) {
 	t.Helper()
 	now := time.Now().UTC()
 	gid, _ := ulid.New(ulid.Timestamp(now), cryptorand.Reader)
 	expires := now.Add(365 * 24 * time.Hour)
+	caveats := []string{
+		"time < " + expires.Format(time.RFC3339Nano),
+		"device-id == " + daemonPubkey,
+		"operation in [read, write]",
+	}
 	out, err := grant.Mint(grant.MintSpec{
 		RootKey:  h.id.MacaroonRootKey,
 		Location: h.ts.URL,
@@ -379,14 +386,25 @@ func (h *hubFixture) mintCapabilityForDaemon(t *testing.T, daemonPubkey string) 
 				Operations: []string{"read", "write"},
 			},
 		},
-		Caveats: []string{
-			"time < " + expires.Format(time.RFC3339Nano),
-			"device-id == " + daemonPubkey,
-			"operation in [read, write]",
-		},
+		Caveats: caveats,
 	})
 	if err != nil {
 		t.Fatalf("mint capability: %v", err)
+	}
+	// Mirror the production flow: every minted capability gets a
+	// grants_known row so revoke paths can verify ownership.
+	scopeJSON, _ := json.Marshal(map[string]any{"primitive": "sync", "namespace": "test-bucket", "operations": []string{"read", "write"}})
+	caveatsJSON, _ := json.Marshal(caveats)
+	if err := h.store.RememberGrant(context.Background(), storage.KnownGrant{
+		GrantID:            gid.String(),
+		IssuedByPrincipal:  h.id.HubID,
+		RecipientPrincipal: daemonPubkey,
+		ScopeJSON:          string(scopeJSON),
+		CaveatsJSON:        string(caveatsJSON),
+		IssuedAt:           now,
+		ExpiresAt:          expires,
+	}); err != nil {
+		t.Fatalf("RememberGrant: %v", err)
 	}
 	return gid.String(), base64.StdEncoding.EncodeToString(out.Macaroon)
 }
@@ -440,8 +458,10 @@ func TestCratePairing_RevokeThenRefresh(t *testing.T) {
 	daemonPubkey := freshPubkey(t)
 	gid, cap := h.mintCapabilityForDaemon(t, daemonPubkey)
 
-	// Issuer-side authority to call DELETE /v1/capability/{id}.
-	revGrant := h.mintGrantWithScope(t, grant.Primitive("grant"), "*", []string{"revoke"}, nil)
+	// The capability was issued by h.id.HubID; the ownership check now
+	// requires the revoker to share that principal id. Mint the revGrant
+	// on behalf of the Hub itself (the legitimate issuer).
+	revGrant := h.mintGrantWithScopeAs(t, h.id.HubID, grant.Primitive("grant"), "*", []string{"revoke"}, nil)
 
 	status, body := h.do(t, "DELETE", "/v1/capability/"+gid, nil, map[string]string{
 		"X-Fabric-Grant": revGrant,
@@ -461,5 +481,42 @@ func TestCratePairing_RevokeThenRefresh(t *testing.T) {
 	_ = json.Unmarshal(body, &ee)
 	if ee.Error.Code != "grant_revoked" {
 		t.Errorf("error.code: got %q, want grant_revoked", ee.Error.Code)
+	}
+}
+
+// TestCapabilityRevoke_ThirdPartyDenied is the security regression for the
+// audit finding: a principal holding any `grant:revoke` grant could
+// previously revoke any capability in the Hub, regardless of whether they
+// issued it or were the recipient. Now the request is rejected with 403
+// scope_denied (or 404 not_found if the grant was never tracked).
+func TestCapabilityRevoke_ThirdPartyDenied(t *testing.T) {
+	h := newHubFixture(t)
+	daemonPubkey := freshPubkey(t)
+	gid, cap := h.mintCapabilityForDaemon(t, daemonPubkey)
+
+	// revGrant is issued by an UNRELATED principal (default mint helper
+	// generates a fresh random ulid). Holder has the right scope but no
+	// stake in the target capability.
+	revGrant := h.mintGrantWithScope(t, grant.Primitive("grant"), "*", []string{"revoke"}, nil)
+
+	status, body := h.do(t, "DELETE", "/v1/capability/"+gid, nil, map[string]string{
+		"X-Fabric-Grant": revGrant,
+	})
+	if status != http.StatusForbidden {
+		t.Fatalf("third-party revoke: got %d, want 403; body=%s", status, body)
+	}
+	var ee errorEnv
+	_ = json.Unmarshal(body, &ee)
+	if ee.Error.Code != "scope_denied" {
+		t.Errorf("error.code: got %q, want scope_denied", ee.Error.Code)
+	}
+
+	// And the daemon's capability must STILL work — the rejected revoke
+	// should not leave any partial state behind.
+	status, _ = h.do(t, "POST", "/v1/capability/refresh", nil, map[string]string{
+		"X-Fabric-Grant": cap,
+	})
+	if status == http.StatusUnauthorized {
+		t.Errorf("daemon capability was incorrectly revoked despite 403 on third-party revoke")
 	}
 }

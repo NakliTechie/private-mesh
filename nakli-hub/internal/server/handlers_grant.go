@@ -275,6 +275,11 @@ func (s *Server) handleGrantRevoke(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkAuth(w, r, scopeRequirement{Primitive: "grant", Operation: "revoke"}); err != nil {
 		return
 	}
+	// Ownership check: same rationale as handleCapabilityRevoke — only
+	// the issuer or recipient of the target grant may revoke it.
+	if err := s.requireGrantOwnership(w, r, req.GrantID); err != nil {
+		return
+	}
 	g := grantFromCtx(ctx)
 
 	// Write a revocation event to a History stream named "__revocations__"

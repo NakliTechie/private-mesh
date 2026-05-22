@@ -18,6 +18,15 @@ import (
 // mintGrantWithScope is like hubFixture.mintGrant but lets a test customize
 // scope + caveats. Returns the base64-encoded macaroon.
 func (h *hubFixture) mintGrantWithScope(t *testing.T, primitive grant.Primitive, namespace string, operations []string, caveats []string) string {
+	return h.mintGrantWithScopeAs(t, "", primitive, namespace, operations, caveats)
+}
+
+// mintGrantWithScopeAs is like mintGrantWithScope but lets the test pin the
+// IssuedByPrincipal. Pass "" to get a fresh random principal (the previous
+// default). Use this when a test exercises ownership-aware code paths
+// (e.g., /grant/revoke and /v1/capability/{id}) where the requester
+// principal must match the target grant's issuer or recipient.
+func (h *hubFixture) mintGrantWithScopeAs(t *testing.T, issuedByPrincipal string, primitive grant.Primitive, namespace string, operations []string, caveats []string) string {
 	t.Helper()
 	pub, _, err := ed25519.GenerateKey(cryptorand.Reader)
 	if err != nil {
@@ -25,14 +34,18 @@ func (h *hubFixture) mintGrantWithScope(t *testing.T, primitive grant.Primitive,
 	}
 	now := time.Now().UTC()
 	gid, _ := ulid.New(ulid.Timestamp(now), cryptorand.Reader)
-	pid, _ := ulid.New(ulid.Timestamp(now), cryptorand.Reader)
+	principal := issuedByPrincipal
+	if principal == "" {
+		pid, _ := ulid.New(ulid.Timestamp(now), cryptorand.Reader)
+		principal = pid.String()
+	}
 	g, err := grant.Mint(grant.MintSpec{
 		RootKey:  h.id.MacaroonRootKey,
 		Location: h.ts.URL,
 		Identifier: grant.Identifier{
 			GrantID:           gid.String(),
 			IssuedAt:          now,
-			IssuedByPrincipal: pid.String(),
+			IssuedByPrincipal: principal,
 			IssuedByKeypair:   pub,
 			Scope: grant.Scope{
 				Primitive:  primitive,
@@ -43,7 +56,7 @@ func (h *hubFixture) mintGrantWithScope(t *testing.T, primitive grant.Primitive,
 		Caveats: caveats,
 	})
 	if err != nil {
-		t.Fatalf("mintGrantWithScope: %v", err)
+		t.Fatalf("mintGrantWithScopeAs: %v", err)
 	}
 	return base64.StdEncoding.EncodeToString(g.Macaroon)
 }
