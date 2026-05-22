@@ -13,6 +13,23 @@ bucket_name = "nakli-fabric-blobs"
 binding = "STATE"
 id = "00000000000000000000000000000000"
 
+# Single-flight redemption flag for CRATE-PAIR tokens. The DO instance
+# (one per token, addressed by token secret) holds the atomic redeemed
+# bit so two concurrent /pair/complete calls cannot both mint daemon
+# capabilities for the same token. KV is not strongly consistent enough
+# for this. See src/pair-redemption-do.ts for the rationale.
+[[durable_objects.bindings]]
+name = "PAIR_REDEMPTION"
+class_name = "PairRedemption"
+
+# DO migration — required when introducing a new DO class. Operators
+# upgrading an existing deployment run `wrangler deploy` and the runtime
+# provisions the new class. No state migration is needed (this is a
+# fresh DO with no prior schema).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairRedemption"]
+
 [vars]
 PROTOCOL_VERSION = "naklimesh/1.0"
 MAX_EVENT_SIZE_BYTES = "1048576"

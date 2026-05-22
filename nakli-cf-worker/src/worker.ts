@@ -30,6 +30,11 @@ import {
 } from './macaroon.js';
 import { newNumericCode } from './numeric-code.js';
 import { readBodyCapped, requestBodyLimitBytes, BodyTooLargeError } from './body-cap.js';
+import { PairRedemption, tryRedeemViaDO } from './pair-redemption-do.js';
+
+// Re-export the Durable Object class so the Cloudflare runtime can
+// instantiate it via the wrangler binding.
+export { PairRedemption };
 import {
   evaluateCaveats,
   CaveatError,
@@ -1065,10 +1070,19 @@ async function handleCratePairingRedeem(req: Request, env: Env): Promise<Respons
     return errorResponse('token_expired', 'token has expired; generate a new one from the browser', 410);
   }
 
+  // Claim the single-flight redemption slot BEFORE minting. The DO is
+  // serialized per-token (addressed by body.secret), so two concurrent
+  // /pair/complete calls hit the same instance and the second one sees
+  // the first's redeemed flag. KV alone cannot give this guarantee.
+  const redeemRes = await tryRedeemViaDO(env.PAIR_REDEMPTION, body.secret, body.daemon_pubkey);
+  if ('redeemed_by' in redeemRes) {
+    return errorResponse('token_already_redeemed', 'token already redeemed by a concurrent caller', 409);
+  }
+
   // Mint the daemon capability — macaroon scoped to sync over the bucket
   // namespace with `time < now+1y`, `device-id == daemon_pubkey`,
   // `operation in [read, write]`.
-  const now = new Date();
+  const now = new Date(redeemRes.at);
   const expires = new Date(now.getTime() + CRATE_PAIR_CAPABILITY_TTL_SECONDS * 1000);
   const grantId = ulid();
   const transportPubkey = base64ToBytes(env.HUB_PUBLIC_KEY);
@@ -1093,18 +1107,14 @@ async function handleCratePairingRedeem(req: Request, env: Env): Promise<Respons
     ],
   });
 
-  // Mark redeemed via read-then-conditional-write. KV has no atomic CAS
-  // so a concurrent redeem call could win the race — re-read to check
-  // and bail if so. Race window is documented per plan/Unit-C-notes.md.
-  const reread = await getCratePairingToken(env, body.secret);
-  if (!reread || reread.redeemed_at) {
-    return errorResponse('token_already_redeemed', 'token already redeemed by a concurrent caller', 409);
-  }
-  reread.redeemed_at = now.toISOString();
-  reread.redeemed_by_daemon_pubkey = body.daemon_pubkey;
-  reread.daemon_fingerprint = JSON.stringify(body.daemon_fingerprint ?? {});
-  reread.issued_capability_id = grantId;
-  await updateCratePairingToken(env, reread);
+  // Mirror the redemption metadata into KV best-effort so /pair/intent/status
+  // reads (which still hit KV) see the new state. The DO remains the
+  // source of truth for "redeemed?" — KV is just a cache.
+  existing.redeemed_at = redeemRes.at;
+  existing.redeemed_by_daemon_pubkey = body.daemon_pubkey;
+  existing.daemon_fingerprint = JSON.stringify(body.daemon_fingerprint ?? {});
+  existing.issued_capability_id = grantId;
+  await updateCratePairingToken(env, existing);
 
   return successResponse({
     v: 1,
