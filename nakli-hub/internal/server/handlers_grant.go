@@ -68,6 +68,19 @@ func (s *Server) handleGrantMint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, ErrBadRequest, "recipient_principal_id and scope.primitive are required", false)
 		return
 	}
+	// SECURITY (P2 #14): when the strict-mint flag is on, require
+	// parent_grant_macaroon. Without a parent, the holder of a wildcard
+	// `grant:mint` Grant can mint arbitrary scopes — bypassing the spec's
+	// "only attenuate" promise. Default off because the JS SDK's
+	// GrantStore.mint() supports a root-mint flow via HTTP that some
+	// browser apps rely on; operators flip the flag once their consumer
+	// fleet has migrated to either SDK-direct mintLocal or parent-bearing
+	// /grant/mint.
+	if s.cfg.Auth.StrictMintRequiresParent && req.ParentGrantMacaroon == "" {
+		writeError(w, r, http.StatusBadRequest, ErrBadRequest,
+			"parent_grant_macaroon is required (StrictMintRequiresParent is enabled)", false)
+		return
+	}
 	if err := s.checkAuth(w, r, scopeRequirement{
 		Primitive:    "grant",
 		Operation:    "mint",
