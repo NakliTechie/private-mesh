@@ -90,6 +90,44 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, req scopeRequ
 	return nil
 }
 
+// requireGrantOwnership rejects the request unless the authenticated
+// principal is either the issuer or the recipient of the target grant.
+// Used by /grant/revoke and DELETE /v1/capability/{id} to prevent a
+// holder of an unrelated `grant:revoke` grant from revoking other
+// principals' capabilities.
+//
+// On not-found (the Hub has never seen this grant), the request is
+// rejected as `not_found` — fail closed. On any DB error, returns 500.
+// On a successful check, returns nil and the caller proceeds.
+func (s *Server) requireGrantOwnership(w http.ResponseWriter, r *http.Request, targetGrantID string) error {
+	g := grantFromCtx(r.Context())
+	if g == nil {
+		writeError(w, r, http.StatusUnauthorized, ErrGrantMissing, "Grant context missing", false)
+		return errAuthShortCircuited
+	}
+	known, ok, err := s.store.GetKnownGrant(r.Context(), targetGrantID)
+	if err != nil {
+		s.logger.Error("GetKnownGrant failed", "err", err)
+		writeError(w, r, http.StatusInternalServerError, ErrUnavailable, "could not look up grant", true)
+		return errAuthShortCircuited
+	}
+	if !ok {
+		// The Hub never recorded this grant — revoking it would be a
+		// no-op on the auth side anyway, but we don't want to leak that
+		// the id was unknown vs. unauthorized either. 404 keeps both
+		// outcomes indistinguishable to a probing attacker.
+		writeError(w, r, http.StatusNotFound, ErrNotFound, "grant not found", false)
+		return errAuthShortCircuited
+	}
+	requester := g.Identifier.IssuedByPrincipal
+	if requester != known.IssuedByPrincipal && requester != known.RecipientPrincipal {
+		writeError(w, r, http.StatusForbidden, ErrScopeDenied,
+			"requester is neither the issuer nor the recipient of the target grant", false)
+		return errAuthShortCircuited
+	}
+	return nil
+}
+
 // errAuthShortCircuited is a sentinel; handlers use it to detect that checkAuth
 // already wrote the response.
 var errAuthShortCircuited = errors.New("server: auth check short-circuited")

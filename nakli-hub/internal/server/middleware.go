@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -107,11 +108,18 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeError(w, r, http.StatusUnauthorized, ErrGrantInvalid, "macaroon parse failed", false)
 			return
 		}
-		// Refuse Grants that have been revoked.
-		if revoked, _ := s.store.IsGrantRevoked(r.Context(), g.Identifier.GrantID); revoked {
+		// Refuse Grants that have been revoked. Combine with a first-sight
+		// RememberGrant so ownership-aware paths (/grant/revoke,
+		// DELETE /v1/capability/{id}) can verify the issuer of a grant
+		// they were never the direct mint-handler for (CLI-minted grants,
+		// conformance fixtures, etc.). RememberGrant uses ON CONFLICT
+		// DO NOTHING so this is idempotent.
+		known, _, gerr := s.store.GetKnownGrant(r.Context(), g.Identifier.GrantID)
+		if gerr == nil && known.RevokedAt != nil {
 			writeError(w, r, http.StatusUnauthorized, ErrGrantRevoked, "Grant has been revoked", false)
 			return
 		}
+		s.rememberAuthenticatedGrant(r.Context(), g)
 		// Test 30: refuse Grants whose bearer agent has been retired. The
 		// requester asserts their agent-id via X-Fabric-Agent-Id; if the
 		// principals row marks that agent retired, reject.
@@ -160,6 +168,35 @@ func dischargeIDsFromCtx(ctx context.Context) map[string]struct{} {
 		return map[string]struct{}{}
 	}
 	return m
+}
+
+// rememberAuthenticatedGrant inserts a grants_known row for grants the Hub
+// encounters via authMiddleware but didn't mint itself (e.g., grants
+// produced by `nakli-cli grant mint` directly against the macaroon root
+// key, or conformance test fixtures). Without this, ownership-aware
+// revocation paths would 404 on any grant the Hub hadn't seen through
+// /grant/mint or /pairing/redeem. The insert is idempotent
+// (ON CONFLICT DO NOTHING), so repeated calls during normal auth churn
+// are cheap.
+func (s *Server) rememberAuthenticatedGrant(ctx context.Context, g *grant.Grant) {
+	if g == nil || g.Identifier.GrantID == "" {
+		return
+	}
+	scopeJSON, _ := json.Marshal(g.Identifier.Scope)
+	caveatsJSON, _ := json.Marshal(g.Caveats)
+	// RecipientPrincipal is unknown from the macaroon alone; only the
+	// /grant/mint handler knows who the grant was minted FOR. Leave it
+	// blank here so the explicit RememberGrant call inside /grant/mint
+	// remains authoritative (ON CONFLICT DO NOTHING means our blank
+	// insert won't overwrite a richer row).
+	_ = s.store.RememberGrant(ctx, storage.KnownGrant{
+		GrantID:           g.Identifier.GrantID,
+		IssuedByPrincipal: g.Identifier.IssuedByPrincipal,
+		ParentGrantID:     g.Identifier.ParentGrantID,
+		ScopeJSON:         string(scopeJSON),
+		CaveatsJSON:       string(caveatsJSON),
+		IssuedAt:          g.Identifier.IssuedAt,
+	})
 }
 
 // parseDischarges reads X-Fabric-Discharge (comma-separated base64 macaroons),
