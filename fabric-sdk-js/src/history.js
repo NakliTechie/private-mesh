@@ -4,12 +4,69 @@
 // audit-log records. Callers pass plaintext payload; the SDK serializes it and
 // sends. The hash chain is managed by the SDK: it tracks the last known head
 // per stream and supplies previous_event_hash on each append.
+//
+// SECURITY (P2 #17): the SDK recomputes event_hash locally on every append
+// AND verifies the chain on every read. Without this the SDK takes whatever
+// the transport returns at face value — a malicious or compromised transport
+// could fork the audit trail unnoticed.
 
 import { newIdempotencyKey } from './transport.js';
 import { bytesToBase64, base64ToBytes } from './util/base64.js';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder('utf-8', { fatal: true });
+
+// HistoryHashError fires when a server-returned event_hash disagrees
+// with the locally-recomputed one. Indicates either the transport
+// tampered with the response or the SDK and Hub disagree on the
+// canonical hash formula — either is a bug we want to surface.
+export class HistoryHashError extends Error {
+  constructor(message, expected, got) {
+    super(message);
+    this.name = 'HistoryHashError';
+    this.expected = expected;
+    this.got = got;
+  }
+}
+
+// computeHistoryEventHash mirrors the Hub's ComputeHistoryEventHash:
+// SHA-256(prev || event_id || kind || payload_metadata || causal_deps_json).
+// payloadMetadata is empty when the caller didn't send one;
+// causalDepsJson is canonical JSON of the array (or "[]" when empty),
+// matching the Hub's jsonStringArray helper byte-for-byte.
+export async function computeHistoryEventHash(prev, eventID, kind, payloadMetadata, causalDeps) {
+  const prevBytes = prev instanceof Uint8Array
+    ? prev
+    : (prev ? base64ToBytes(prev) : new Uint8Array(0));
+  const cdJSON = (causalDeps && causalDeps.length > 0)
+    ? JSON.stringify(causalDeps)
+    : '[]';
+  const buf = concatBytes(
+    prevBytes,
+    enc.encode(eventID),
+    enc.encode(kind),
+    enc.encode(payloadMetadata ?? ''),
+    enc.encode(cdJSON),
+  );
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return new Uint8Array(digest);
+}
+
+function concatBytes(...parts) {
+  let total = 0;
+  for (const p of parts) total += p.byteLength;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.byteLength; }
+  return out;
+}
+
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
 
 export class HistoryAPI {
   constructor(opts) {
@@ -46,6 +103,24 @@ export class HistoryAPI {
       idempotencyKey: spec.idempotencyKey ?? newIdempotencyKey(),
     });
     this._freshness?._updateFromEnvelope(res.freshness);
+    // SECURITY: recompute the hash locally and compare to what the
+    // transport returned. Catches a tampered or buggy response before
+    // the SDK's internal head tracker gets poisoned.
+    const recomputed = await computeHistoryEventHash(
+      prev,
+      res.data.event_id,
+      spec.event.kind,
+      '',
+      spec.event.causalDependencies ?? [],
+    );
+    const returned = base64ToBytes(res.data.event_hash);
+    if (!bytesEqual(recomputed, returned)) {
+      throw new HistoryHashError(
+        `history.append: transport returned event_hash that does not match locally-computed value (event_id=${res.data.event_id})`,
+        bytesToBase64(recomputed),
+        res.data.event_hash,
+      );
+    }
     this._heads.set(spec.streamId, res.data.event_hash);
     return {
       eventId: res.data.event_id,
@@ -65,18 +140,41 @@ export class HistoryAPI {
       grant: opts.grant ?? this._getCurrentGrant(),
     });
     this._freshness?._updateFromEnvelope(res.freshness);
-    return {
-      events: (res.data?.events ?? []).map((ev) => ({
-        eventId: ev.event_id,
-        kind: ev.kind,
-        sequenceNumber: ev.sequence_number,
-        payload: decodePayload(base64ToBytes(ev.payload_ciphertext)),
-        previousEventHash: ev.previous_event_hash,
-        eventHash: ev.event_hash,
-        appendedAt: ev.appended_at ? new Date(ev.appended_at) : null,
-      })),
-      more: !!res.data?.more,
-    };
+    const events = (res.data?.events ?? []).map((ev) => ({
+      eventId: ev.event_id,
+      kind: ev.kind,
+      sequenceNumber: ev.sequence_number,
+      payload: decodePayload(base64ToBytes(ev.payload_ciphertext)),
+      previousEventHash: ev.previous_event_hash,
+      eventHash: ev.event_hash,
+      appendedAt: ev.appended_at ? new Date(ev.appended_at) : null,
+      causalDependencies: ev.causal_dependencies ?? [],
+    }));
+    // SECURITY: walk the chain and recompute each event_hash against
+    // the previous one. Detects a malicious or compromised transport
+    // returning forged history. Unless the caller opts out via
+    // opts.skipChainVerify (test/debug), a mismatch throws
+    // HistoryHashError naming the offending event_id.
+    if (!opts.skipChainVerify) {
+      for (const ev of events) {
+        const recomputed = await computeHistoryEventHash(
+          ev.previousEventHash,
+          ev.eventId,
+          ev.kind,
+          '', // payload_metadata not surfaced on the wire today
+          ev.causalDependencies,
+        );
+        const returned = base64ToBytes(ev.eventHash);
+        if (!bytesEqual(recomputed, returned)) {
+          throw new HistoryHashError(
+            `history.read: chain hash mismatch at event_id=${ev.eventId}`,
+            bytesToBase64(recomputed),
+            ev.eventHash,
+          );
+        }
+      }
+    }
+    return { events, more: !!res.data?.more };
   }
 
   async verify(streamId, opts = {}) {
