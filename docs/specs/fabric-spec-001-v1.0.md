@@ -338,6 +338,35 @@ Wire serialization is the libmacaroon v2 binary format, base64-encoded for the `
 - `caveats` — first-party and third-party caveats (see "Caveat catalog")
 - `signature` — HMAC-SHA256 chain over identifier and caveats
 
+#### v1.0 security posture: macaroons are bearer tokens
+
+In v1.0 the macaroon authenticates the request **on possession alone**. The
+`issued_by_keypair` field is carried in the identifier but the protocol does
+NOT require a per-request signature by that keypair. Concretely:
+
+- A leaked macaroon (XSS, browser-extension exfiltration, log scrape, etc.) can be replayed by anyone who obtains the bytes, from any origin, until it expires or is revoked.
+- The `agent-id == X` / `device-id == X` caveats are evaluated against
+  `X-Fabric-*` request headers — not against a cryptographic proof. The
+  caveat-binding strict-mode flag (`cfg.Auth.StrictCaveatBinding` on the
+  Hub) makes the headers REQUIRED, but the headers themselves remain
+  trust-on-assertion.
+
+**v1.x will add macaroon proof-of-possession** via a per-request signature
+header (DPoP-style: `X-Fabric-Signature: ed25519(method ‖ path ‖ body_hash
+‖ nonce ‖ timestamp)` verified against `issued_by_keypair`). When that
+ships, the strict-binding caveats become cryptographic instead of
+trust-on-assertion. See `plan/pending.md` P3 #22 + #23 for the rollout
+plan.
+
+**Mitigations applicable today**:
+
+- Short macaroon expiries (the default is 30 days; consider shorter for
+  browser-held grants).
+- Origin-bound consumer tools (don't load wildcard grants into XSS-prone
+  pages).
+- Treat the macaroon like a session token. Never log it, never include
+  it in error reports / sentry beacons.
+
 ### Caveat catalog (v1.0)
 
 First-party caveats (verified locally at the transport):
