@@ -44,6 +44,22 @@ type AdapterWithLifecycle interface {
 	Close() error
 }
 
+// AdapterEffectiveHost is an optional extension adapters MUST implement
+// when their effective outbound destination can be influenced by the
+// caller's params (e.g., webhookpost reads params.url, openaicompatible
+// reads params.base_url). The Hub calls EffectiveHost BEFORE caveat
+// evaluation so the `only-domain in [...]` caveat is enforced against
+// the actual outbound host — not the caller-supplied domain field
+// (which the audit flagged as bypassable).
+//
+// Return ("", nil) when the caller's params do not include a host (the
+// adapter falls back to a hardcoded base). The Hub treats that as "use
+// the caveat-side BridgeDomain or the adapter's static base" — current
+// behavior. Returning ("", err) signals a malformed params payload.
+type AdapterEffectiveHost interface {
+	EffectiveHost(params map[string]any) (string, error)
+}
+
 // OperationSpec describes a single operation. Names are kebab-case (matching
 // the spec's catalogue) so wire calls don't depend on programming-language
 // naming conventions.

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -81,6 +82,26 @@ func (a *Adapter) Operations() []bridge.OperationSpec {
 			}...)...),
 		},
 	}
+}
+
+// EffectiveHost implements bridge.AdapterEffectiveHost. The outbound
+// destination is params.base_url when set, else the adapter's configured
+// default. Returning the parsed Host lets the Hub enforce
+// `only-domain in [...]` caveats against the real target rather than
+// the caller-supplied req.Domain.
+func (a *Adapter) EffectiveHost(params map[string]any) (string, error) {
+	base := a.defaultBaseURL
+	if v, ok := params["base_url"].(string); ok && v != "" {
+		base = v
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("%w: base_url: %v", bridge.ErrInvalidParam, err)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("%w: base_url has no host", bridge.ErrInvalidParam)
+	}
+	return u.Hostname(), nil
 }
 
 func (a *Adapter) Call(ctx context.Context, req *bridge.CallRequest) (*bridge.CallResponse, error) {
