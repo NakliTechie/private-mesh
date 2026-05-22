@@ -49,6 +49,13 @@ type CaveatContext struct {
 	// in this set AND the macaroon-library third-party verification succeeded
 	// earlier in the auth path.
 	DischargeIDs map[string]struct{}
+
+	// StrictBinding mirrors cfg.Auth.StrictCaveatBinding. When true, the
+	// agent-id / device-id / principal-type caveats FAIL on an empty
+	// requester value (header absent) instead of returning nil. The default
+	// (false) keeps backward-compatible behavior so consumers can be
+	// updated before the strict check is flipped on.
+	StrictBinding bool
 }
 
 // CaveatRejection is the outcome of EvaluateCaveats: nil-error + outcome.
@@ -82,11 +89,11 @@ func evaluateOne(c string, ctx CaveatContext) error {
 	case strings.HasPrefix(c, "time > "):
 		return checkTimeAfter(c[len("time > "):], ctx.Now)
 	case strings.HasPrefix(c, "principal-type in "):
-		return checkPrincipalTypeIn(c[len("principal-type in "):], ctx.RequesterPrincipalType, c)
+		return checkPrincipalTypeIn(c[len("principal-type in "):], ctx.RequesterPrincipalType, c, ctx.StrictBinding)
 	case strings.HasPrefix(c, "agent-id == "):
-		return checkEquals("agent-id", c[len("agent-id == "):], ctx.RequesterAgentID, c)
+		return checkEquals("agent-id", c[len("agent-id == "):], ctx.RequesterAgentID, c, ctx.StrictBinding)
 	case strings.HasPrefix(c, "device-id == "):
-		return checkEquals("device-id", c[len("device-id == "):], ctx.RequesterDeviceID, c)
+		return checkEquals("device-id", c[len("device-id == "):], ctx.RequesterDeviceID, c, ctx.StrictBinding)
 	case strings.HasPrefix(c, "operation in "):
 		return checkOperationIn(c[len("operation in "):], ctx.Operation)
 	case strings.HasPrefix(c, "namespace == "):
@@ -162,12 +169,16 @@ func checkOperationIn(body, op string) error {
 	return caveatErr("operation in "+body, "operation not allowed by caveat")
 }
 
-func checkPrincipalTypeIn(body, requesterType, original string) error {
-	// If the request has no authenticated principal type, the caveat is a
-	// Hub-trusted assertion (the issuer signed the macaroon attesting to the
-	// recipient's type). The middleware sets this when the requester's
-	// principal is known.
+func checkPrincipalTypeIn(body, requesterType, original string, strict bool) error {
+	// In lax mode (the default while consumers are being updated), an absent
+	// principal-type header is treated as a Hub-trusted assertion. In strict
+	// mode the missing header IS the failure: it's how an attacker bypasses
+	// the binding caveat. Operators flip cfg.Auth.StrictCaveatBinding once
+	// every legitimate caller sends X-Fabric-Principal-Type.
 	if requesterType == "" {
+		if strict {
+			return caveatErr(original, "principal-type binding requires X-Fabric-Principal-Type header")
+		}
 		return nil
 	}
 	allowed := parseListBracket(body)
@@ -179,8 +190,13 @@ func checkPrincipalTypeIn(body, requesterType, original string) error {
 	return caveatErr(original, "principal-type not in allowed set")
 }
 
-func checkEquals(name, body, requesterValue, original string) error {
+func checkEquals(name, body, requesterValue, original string, strict bool) error {
+	// See checkPrincipalTypeIn for the strict/lax rationale. The missing
+	// header is the bypass; strict mode rejects it.
 	if requesterValue == "" {
+		if strict {
+			return caveatErr(original, name+" binding requires X-Fabric-"+headerForCaveat(name)+" header")
+		}
 		return nil
 	}
 	want := strings.TrimSpace(body)
@@ -188,6 +204,18 @@ func checkEquals(name, body, requesterValue, original string) error {
 		return caveatErr(original, name+" does not match")
 	}
 	return nil
+}
+
+// headerForCaveat returns the X-Fabric-* header name corresponding to a
+// caveat keyword (used for human-readable error messages).
+func headerForCaveat(name string) string {
+	switch name {
+	case "agent-id":
+		return "Agent-Id"
+	case "device-id":
+		return "Device-Id"
+	}
+	return name
 }
 
 // checkRate enforces a token bucket of N tokens per window. Window units:

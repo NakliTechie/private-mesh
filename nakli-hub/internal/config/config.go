@@ -33,6 +33,18 @@ type Config struct {
 		RetentionSeconds int64 `json:"retention_seconds"` // ≥ 86400 per spec
 		MaxKeysPerGrant  int64 `json:"max_keys_per_grant"`
 	} `json:"idempotency"`
+	Auth struct {
+		// StrictCaveatBinding, when true, makes `agent-id ==`, `device-id ==`,
+		// and `principal-type in [...]` caveats FAIL if the corresponding
+		// X-Fabric-Agent-Id / X-Fabric-Device-Id / X-Fabric-Principal-Type
+		// header is absent. The default (false) preserves prior behavior in
+		// which an absent header was treated as a Hub-trusted assertion —
+		// this is the documented security gap that bypasses the binding
+		// caveats. Operators should set this to true once their consumer
+		// fleet (crate, crate-agent, etc.) sends the binding headers
+		// unconditionally on every authenticated call.
+		StrictCaveatBinding bool `json:"strict_caveat_binding"`
+	} `json:"auth"`
 	Health struct {
 		FreshnessBudgetSeconds int64 `json:"freshness_budget_seconds"`
 	} `json:"health"`
