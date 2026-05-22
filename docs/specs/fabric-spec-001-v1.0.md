@@ -788,7 +788,10 @@ All event payloads are encrypted before being sent to transports. Transports see
 - Algorithm: XChaCha20-Poly1305
 - Key derivation: per-namespace symmetric key derived from root key + namespace name via HKDF-SHA256
 - Nonce: 24 bytes, random per-event
-- AAD: namespace || stream_id || event_id || vector_clock_hash
+- AAD: SHA-256(namespace || 0x1F || stream_id || 0x1F || canonical-JSON(vector_clock))
+  - 0x1F (Unit Separator) prevents canonicalization confusion across namespace/stream boundaries.
+  - `vector_clock` is the wire-format object; canonical JSON means `JSON.stringify` with no extra whitespace.
+  - **v1.0 limitation**: `event_id` is server-issued (HTTP handler assigns the ULID after parsing) and therefore NOT in the v1.0 AAD. v1.x will move to client-generated `event_id` (deduplicated via `idempotency_key`) and bind it. Tracked in `plan/pending.md`.
 
 ### Bridge credential encryption
 
