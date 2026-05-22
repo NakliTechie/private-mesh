@@ -11,6 +11,14 @@ export interface Env {
   DISCHARGE_TTL_SECONDS: string;
   LOG_LEVEL: string;
   CONFORMANCE_MODE?: string;
+  // STRICT_CAVEAT_BINDING, when set to "true", makes agent-id ==,
+  // device-id ==, and principal-type in [...] caveats FAIL if the matching
+  // request header is absent. Default false preserves prior behavior in
+  // which an absent header was treated as a Hub-trusted assertion — the
+  // documented security gap that bypasses the binding caveats. Flip to
+  // "true" once consumers (crate, crate-agent, etc.) send the binding
+  // headers unconditionally.
+  STRICT_CAVEAT_BINDING?: string;
   // PEER_URL is a comma-separated list of upstream peers used by /health to
   // surface the `degraded` flag (conformance test 26). Optional.
   PEER_URL?: string;

@@ -23,6 +23,12 @@ export interface CaveatContext {
   dischargeIds: Set<string>;
   // dischargeCache lookup for a previously-cached discharge.
   dischargeLookup(verifierUrl: string): boolean;
+  // strictBinding mirrors env.STRICT_CAVEAT_BINDING. When true, agent-id ==
+  // / device-id == / principal-type in [...] caveats FAIL on a missing
+  // request header instead of being silently satisfied. Default false
+  // preserves backward-compatible behavior so consumers can be updated
+  // before the strict check is flipped on.
+  strictBinding?: boolean;
 }
 
 export type CaveatKind = 'unmet' | 'rate_limited' | 'human_approval';
@@ -61,7 +67,12 @@ function evaluateOne(c: string, ctx: CaveatContext): void {
     return;
   }
   if (c.startsWith('principal-type in ')) {
-    if (!ctx.requesterPrincipalType) return; // Hub-trusted assertion
+    if (!ctx.requesterPrincipalType) {
+      if (ctx.strictBinding) {
+        throw new CaveatError(c, 'principal-type binding requires X-Fabric-Principal-Type header');
+      }
+      return; // lax: treat as Hub-trusted assertion
+    }
     const allowed = parseListBracket(c.slice('principal-type in '.length));
     if (!allowed.includes(ctx.requesterPrincipalType)) {
       throw new CaveatError(c, 'principal-type not in allowed set');
@@ -69,13 +80,23 @@ function evaluateOne(c: string, ctx: CaveatContext): void {
     return;
   }
   if (c.startsWith('agent-id == ')) {
-    if (!ctx.requesterAgentId) return;
+    if (!ctx.requesterAgentId) {
+      if (ctx.strictBinding) {
+        throw new CaveatError(c, 'agent-id binding requires X-Fabric-Agent-Id header');
+      }
+      return;
+    }
     const want = c.slice('agent-id == '.length).trim();
     if (want !== ctx.requesterAgentId) throw new CaveatError(c, 'agent-id mismatch');
     return;
   }
   if (c.startsWith('device-id == ')) {
-    if (!ctx.requesterDeviceId) return;
+    if (!ctx.requesterDeviceId) {
+      if (ctx.strictBinding) {
+        throw new CaveatError(c, 'device-id binding requires X-Fabric-Device-Id header');
+      }
+      return;
+    }
     const want = c.slice('device-id == '.length).trim();
     if (want !== ctx.requesterDeviceId) throw new CaveatError(c, 'device-id mismatch');
     return;
