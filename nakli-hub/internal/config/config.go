@@ -44,6 +44,19 @@ type Config struct {
 		// fleet (crate, crate-agent, etc.) sends the binding headers
 		// unconditionally on every authenticated call.
 		StrictCaveatBinding bool `json:"strict_caveat_binding"`
+
+		// StrictSyncPushAttribution, when true, makes /sync/push reject
+		// events whose `appended_by_principal` does not match the sender's
+		// authenticated grant principal. Without this, a peer holding a
+		// delegated sync:push grant can push events claiming any
+		// `appended_by_principal` and the receiving Hub records the
+		// forgery verbatim — corrupting the audit trail. Default false
+		// preserves multi-master federation flows where Hub A forwards
+		// events authored by Hub A's own principals to Hub B. Operators
+		// running single-author topologies should enable this. A full
+		// ed25519-signature-per-event mitigation is tracked in
+		// plan/pending.md as a deferred protocol-level follow-up.
+		StrictSyncPushAttribution bool `json:"strict_sync_push_attribution"`
 	} `json:"auth"`
 	Health struct {
 		FreshnessBudgetSeconds int64 `json:"freshness_budget_seconds"`
