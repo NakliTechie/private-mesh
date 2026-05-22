@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -95,7 +94,10 @@ func (a *Adapter) Call(ctx context.Context, req *bridge.CallRequest) (*bridge.Ca
 		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := bridge.ReadBodyCapped(resp.Body, bridge.DefaultResponseLimitBytes)
+	if readErr != nil {
+		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, readErr)
+	}
 	result := map[string]any{
 		"status": resp.StatusCode,
 		"headers": flattenHeaders(resp.Header),

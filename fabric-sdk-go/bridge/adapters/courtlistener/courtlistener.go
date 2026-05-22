@@ -164,7 +164,10 @@ func (a *Adapter) doJSON(ctx context.Context, method, u string, body io.Reader, 
 		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, readErr := bridge.ReadBodyCapped(resp.Body, bridge.DefaultResponseLimitBytes)
+	if readErr != nil {
+		return nil, fmt.Errorf("%w: %s", bridge.ErrUpstreamUnavailable, readErr)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("%w: %s returned %d: %s", bridge.ErrUpstreamUnavailable, u, resp.StatusCode, truncate(string(raw), 256))
 	}
