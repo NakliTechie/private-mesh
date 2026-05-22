@@ -107,15 +107,23 @@ func (s *Server) handleCrateBucketRegister(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	endpoint := req.EndpointURL
-	if endpoint == "" {
-		built, ok := crate.EndpointForProvider(provider, req.AccountID, region, req.BucketName)
-		if !ok {
-			writeError(w, r, http.StatusBadRequest, ErrBadRequest,
-				"could not build endpoint URL for provider="+provider, false)
-			return
-		}
-		endpoint = built
+	// SECURITY: never honour caller-supplied req.EndpointURL. The endpoint
+	// is always derived from the validated provider + account/region/bucket
+	// triple, so a principal with `identity:pair` scope cannot register a
+	// bucket pointing at internal/loopback URLs (AWS metadata, internal
+	// admin services, etc.) and read the proxied response via the bucket-
+	// proxy endpoints. If a non-empty override is supplied we log it as a
+	// hint to operators whose automation is still sending it — it is
+	// silently overridden, not rejected, so legacy callers keep working.
+	endpoint, ok := crate.EndpointForProvider(provider, req.AccountID, region, req.BucketName)
+	if !ok {
+		writeError(w, r, http.StatusBadRequest, ErrBadRequest,
+			"could not build endpoint URL for provider="+provider, false)
+		return
+	}
+	if req.EndpointURL != "" && req.EndpointURL != endpoint {
+		s.logger.Warn("crate-bucket: ignoring caller-supplied endpoint_url override (security)",
+			"provider", provider, "bucket", req.BucketName, "ignored_endpoint", req.EndpointURL)
 	}
 
 	// Mint a fresh bucket_id (ULID — collision-resistant) and seal the secret.

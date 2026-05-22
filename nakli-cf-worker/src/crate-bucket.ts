@@ -366,11 +366,19 @@ export async function handleCrateBucketRegister(req: Request, env: Env, principa
     if (provider === 'r2') region = 'auto';
     else return errorResponse('bad_request', `region is required for provider=${provider}`, 400);
   }
-  let endpoint = body.endpoint_url ?? '';
-  if (!endpoint) {
-    const built = endpointForProvider(provider, body.account_id ?? '', region, body.bucket_name);
-    if (!built) return errorResponse('bad_request', `could not build endpoint URL for provider=${provider}`, 400);
-    endpoint = built;
+  // SECURITY: never honour caller-supplied body.endpoint_url. The endpoint
+  // is always derived from the validated provider + account/region/bucket
+  // triple. Without this, a principal with `identity:pair` scope could
+  // register a bucket pointing at internal/loopback URLs (CF internal
+  // services, metadata, etc.) and read the proxied response via the
+  // bucket-proxy endpoints. Legacy callers that still send endpoint_url
+  // get silent override; we log a console.warn as a hint.
+  const endpoint = endpointForProvider(provider, body.account_id ?? '', region, body.bucket_name);
+  if (!endpoint) return errorResponse('bad_request', `could not build endpoint URL for provider=${provider}`, 400);
+  if (body.endpoint_url && body.endpoint_url !== endpoint) {
+    console.warn('crate-bucket: ignoring caller-supplied endpoint_url override (security)', {
+      provider, bucket: body.bucket_name, ignored_endpoint: body.endpoint_url,
+    });
   }
   const bucketID = 'bk_' + generateULID();
   let credsKey: CryptoKey;
