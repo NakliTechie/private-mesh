@@ -67,6 +67,7 @@ func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request, req scopeRequ
 		BridgeCurrency:         req.BridgeCurrency,
 		Server:                 s,
 		DischargeIDs:           dischargeIDsFromCtx(r.Context()),
+		StrictBinding:          s.cfg.Auth.StrictCaveatBinding,
 	}
 	if err := EvaluateCaveats(g.Caveats, cctx); err != nil {
 		var ce *CaveatError

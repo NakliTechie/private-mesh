@@ -32,12 +32,15 @@ type hubFixture struct {
 	ts    *httptest.Server
 }
 
-func newHubFixture(t *testing.T) *hubFixture {
+func newHubFixture(t *testing.T, opts ...func(*config.Config)) *hubFixture {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := config.Default()
 	cfg.Hub.DataDir = dir
 	cfg.Storage.FsyncWrites = false
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	id, err := hubid.Generate(func() string { return time.Now().UTC().Format(time.RFC3339Nano) })
 	if err != nil {
