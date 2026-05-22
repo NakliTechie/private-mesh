@@ -3,6 +3,13 @@
 export interface Env {
   BLOBS: R2Bucket;
   STATE: KVNamespace;
+  // PAIR_REDEMPTION is a Durable Object namespace whose instances own the
+  // single-flight "redeemed?" flag for each CRATE-PAIR token. KV has no
+  // atomic CAS, so the prior read-then-write redemption flow let two
+  // concurrent calls both mint a fresh daemon capability for the same
+  // token. The DO instance (per-token, addressed by token secret) holds
+  // the redemption flag and serializes concurrent writes.
+  PAIR_REDEMPTION: DurableObjectNamespace;
 
   // vars
   PROTOCOL_VERSION: string;
