@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
@@ -53,6 +54,26 @@ func (a *Adapter) Operations() []bridge.OperationSpec {
 			SideEffects: true,
 		},
 	}
+}
+
+// EffectiveHost implements bridge.AdapterEffectiveHost so the Hub can
+// enforce `only-domain in [...]` caveats against the actual outbound
+// target — params.url — rather than the caller-supplied req.Domain
+// field, which an attacker can lie about while pointing the adapter at
+// an internal service.
+func (a *Adapter) EffectiveHost(params map[string]any) (string, error) {
+	target, err := bridge.ResolveParam[string](params, "url", true, "")
+	if err != nil {
+		return "", err
+	}
+	u, perr := url.Parse(target)
+	if perr != nil {
+		return "", fmt.Errorf("%w: url: %v", bridge.ErrInvalidParam, perr)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("%w: url has no host", bridge.ErrInvalidParam)
+	}
+	return u.Hostname(), nil
 }
 
 func (a *Adapter) Call(ctx context.Context, req *bridge.CallRequest) (*bridge.CallResponse, error) {

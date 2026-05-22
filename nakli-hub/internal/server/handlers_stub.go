@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NakliTechie/private-mesh/fabric-sdk-go/bridge"
@@ -95,11 +96,40 @@ func (s *Server) handleBridgeCall(w http.ResponseWriter, r *http.Request) {
 			"X-Fabric-Idempotency-Key is required on Bridge calls", false)
 		return
 	}
+	// SECURITY (P1 #8): derive the effective outbound host from the
+	// adapter's params, not the caller-supplied req.Domain. Earlier the
+	// caveat `only-domain in [allowed.example.com]` was evaluated against
+	// req.Domain — an attacker could send `domain: "allowed.example.com"`
+	// alongside `params.url: "http://169.254.169.254/..."` and the Hub
+	// would happily perform the request. EffectiveHost is an optional
+	// interface implemented by adapters whose target depends on params
+	// (webhookpost, openai-compatible today). Adapters that don't
+	// implement it fall back to req.Domain (current behavior).
+	effectiveDomain := req.Domain
+	if s.bridge != nil {
+		if a, ok := s.bridge.Get(req.Adapter); ok {
+			if eh, ok := a.(bridge.AdapterEffectiveHost); ok {
+				derived, herr := eh.EffectiveHost(req.Params)
+				if herr != nil {
+					writeError(w, r, http.StatusBadRequest, ErrBadRequest, herr.Error(), false)
+					return
+				}
+				if derived != "" {
+					if req.Domain != "" && !strings.EqualFold(req.Domain, derived) {
+						writeError(w, r, http.StatusBadRequest, ErrBadRequest,
+							"request domain does not match the adapter's effective host derived from params", false)
+						return
+					}
+					effectiveDomain = derived
+				}
+			}
+		}
+	}
 	err := s.checkAuth(w, r, scopeRequirement{
 		Primitive:      "bridge",
 		Operation:      "call",
 		IsBridgeCall:   true,
-		BridgeDomain:   req.Domain,
+		BridgeDomain:   effectiveDomain,
 		BridgeAmount:   req.Amount,
 		BridgeCurrency: req.Currency,
 	})
