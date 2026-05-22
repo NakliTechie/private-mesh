@@ -45,6 +45,17 @@ type Config struct {
 		// unconditionally on every authenticated call.
 		StrictCaveatBinding bool `json:"strict_caveat_binding"`
 
+		// StrictMintRequiresParent, when true, makes /grant/mint reject
+		// requests that omit `parent_grant_macaroon`. Without this flag
+		// the holder of a wildcard `grant:mint` Grant can mint arbitrary
+		// scopes — bypassing the "only attenuate" promise that the spec
+		// makes about delegation. Default false because the JS SDK's
+		// GrantStore.mint() supports a root-mint flow via HTTP that some
+		// browser apps rely on. Operators whose consumer fleet has
+		// migrated to either (a) SDK-direct mintLocal with the root key
+		// or (b) parent-bearing /grant/mint should enable this.
+		StrictMintRequiresParent bool `json:"strict_mint_requires_parent"`
+
 		// StrictSyncPushAttribution, when true, makes /sync/push reject
 		// events whose `appended_by_principal` does not match the sender's
 		// authenticated grant principal. Without this, a peer holding a
