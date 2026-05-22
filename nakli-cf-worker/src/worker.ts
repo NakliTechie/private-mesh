@@ -449,6 +449,7 @@ async function wrap(reqCtx: ReqContext, env: Env, sr: ScopeReq, handler: () => P
       rateConsume: (gid, cap, win) => rateConsume(gid, cap, win),
       dischargeIds: reqCtx.dischargeIds,
       dischargeLookup: () => false,
+      strictBinding: env.STRICT_CAVEAT_BINDING === 'true',
     };
     evaluateCaveats(reqCtx.grant.caveats, ctx);
   } catch (e: any) {
@@ -886,6 +887,9 @@ async function handleBridgeCall(body: any, reqCtx: ReqContext, env: Env): Promis
       hasIdempotencyKey: true,
       isDelegationRequest: false,
       grantId: reqCtx.grant.grantId,
+      requesterPrincipalType: reqCtx.requesterPrincipalType,
+      requesterAgentId: reqCtx.requesterAgentId,
+      requesterDeviceId: reqCtx.requesterDeviceId,
       isBridgeCall: true,
       bridgeDomain: body?.domain,
       bridgeAmount: body?.amount,
@@ -893,6 +897,7 @@ async function handleBridgeCall(body: any, reqCtx: ReqContext, env: Env): Promis
       rateConsume,
       dischargeIds: reqCtx.dischargeIds,
       dischargeLookup: () => false,
+      strictBinding: env.STRICT_CAVEAT_BINDING === 'true',
     });
   } catch (e: any) {
     if (e instanceof CaveatError) {
