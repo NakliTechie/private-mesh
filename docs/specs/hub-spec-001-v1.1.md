@@ -17,7 +17,8 @@ This is the sovereign-path transport — the user's own box, the user's own data
 This document specifies:
 - Binary layout and packaging
 - Configuration file format
-- Storage layout (SQLite + filesystem)
+- Storage layout (durable: SQLite + filesystem; ephemeral: bounded RAM ring buffer)
+- Storage modes — `durable` (default) and `ephemeral` (LAN-anchor pattern)
 - Protocol endpoint implementation requirements
 - Macaroon verification implementation
 - Discharge macaroon issuance (for revocation)
@@ -106,13 +107,17 @@ log_level = "info"                      # silent | error | warn | info | debug
 keypair_file = "hub-identity.json"
 
 [storage]
-# SQLite for metadata, macaroon cache, queue, peer state
-sqlite_db = "fabric.db"
-# Filesystem for event payloads (ciphertext blobs)
-blobs_dir = "blobs"
+mode = "durable"                        # "durable" | "ephemeral" — see §Storage modes
+# --- durable mode (default) ---
+sqlite_db = "fabric.db"                 # SQLite for metadata, macaroon cache, queue, peer state
+blobs_dir = "blobs"                     # Filesystem for event payloads (ciphertext blobs)
 max_event_size_bytes = 1048576          # 1 MB per spec
 max_blob_count = 10000000               # operator-tunable
 fsync_writes = true                     # durable; set false for tests only
+# --- ephemeral mode (opt-in; LAN-anchor pattern) ---
+ephemeral_max_events_per_namespace = 2000      # ring-buffer cap; oldest evicted when exceeded
+ephemeral_max_event_age_seconds    = 86400     # 24h TTL; events older are evicted on next access
+ephemeral_idempotency_cap          = 100000    # per-process; LRU eviction once exceeded
 
 [idempotency]
 retention_seconds = 86400               # 24h per spec
@@ -146,14 +151,16 @@ gpg_pubkey_verify_path = "..."          # for verifying updates
 ### Command-line flags
 
 ```
-nakli-hub serve [--config PATH] [--data-dir PATH] [--listen ADDR]
-nakli-hub init [--data-dir PATH]                    # generate config + hub identity
+nakli-hub serve [--config PATH] [--data-dir PATH] [--listen ADDR] [--storage=durable|ephemeral]
+nakli-hub init [--data-dir PATH] [--storage=durable|ephemeral]   # generate config + hub identity
 nakli-hub status [--config PATH]                    # print health to stdout
-nakli-hub backup [--config PATH] --output PATH      # snapshot SQLite + blobs
-nakli-hub restore [--config PATH] --input PATH      # restore from snapshot
+nakli-hub backup [--config PATH] --output PATH      # snapshot SQLite + blobs (durable only)
+nakli-hub restore [--config PATH] --input PATH      # restore from snapshot (durable only)
 nakli-hub conformance [--target URL]                # run conformance suite against another Hub
 nakli-hub version
 ```
+
+`--storage` (also exposed as `NAKLI_HUB_STORAGE`) overrides `[storage].mode` in the config file. `backup` and `restore` are no-ops on an ephemeral Hub — there is nothing durable to snapshot beyond the identity file, which the operator backs up manually if they want fingerprint continuity.
 
 ### Environment variables
 
@@ -338,6 +345,85 @@ CREATE INDEX idx_pairing_expires ON pairing_tokens(expires_at);
 - File contents: raw ciphertext bytes (XChaCha20-Poly1305 output)
 - Permissions: 0640 on Linux/macOS
 - Operator backup target: this directory + the SQLite files
+
+---
+
+## Storage modes
+
+The Hub supports two storage modes, selected at startup. The protocol surface is identical in both modes — every endpoint in `fabric-spec-001-v1.0.md` MUST work, and the Hub MUST pass the same 32-test conformance suite. The modes differ only in how event-bearing state survives process restart.
+
+### `durable` (default)
+
+Everything described in §Storage layout above. SQLite for metadata, filesystem for blob ciphertext, `fsync_writes = true` by default. Events persist across restarts; the operator's backup target is `<data_dir>` in its entirety.
+
+This is the canonical mode. Use it on the anchor box, on always-on Pis, on VPSes — anywhere the user is treating this Hub as the source of truth for their fabric.
+
+### `ephemeral` (opt-in, LAN-anchor pattern)
+
+The Hub keeps state in a bounded RAM ring buffer with age-based eviction. Restart loses all events; the Hub's own identity (keypair, `hub-identity.json`) is preserved on disk so peers that pinned the fingerprint continue to recognize it.
+
+Intended for the **LAN-anchor** pattern (see `local-network-spec-001-v1.1.md` §LAN-anchor pattern): an always-on device on a local network running a Vault peer that buffers messages so intermittently-online peers on the same network can converge, while durability lives elsewhere (a remote Hub on the user's anchor box, or `nakli-cf-worker`).
+
+#### What persists across restarts
+
+| Item | Persists | Where |
+|---|---|---|
+| Hub identity keypair | Yes | `<data_dir>/hub-identity.json` (mode 0600) |
+| Config | Yes | `<config>` (operator-managed) |
+| Vault events | **No** | RAM ring buffer; lost on restart |
+| History events | **No** | RAM ring buffer; lost on restart |
+| Idempotency cache | **No** | In-process LRU; lost on restart |
+| Discharge cache | **No** | In-process LRU; lost on restart |
+| Operation log | **No** | Optionally streamed to stdout/file for observability; not durable |
+| Peers table | Yes (config only) | `<config>` `[peers]` entries; learned-peer state is RAM-only |
+
+#### Storage limits
+
+Configured under `[storage]` (see §Configuration). Defaults:
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `ephemeral_max_events_per_namespace` | 2000 | Ring buffer cap. On exceed, oldest event evicted per FIFO. |
+| `ephemeral_max_event_age_seconds` | 86400 (24h) | Age TTL. On read or append, events older than this are evicted before serving the request. |
+| `ephemeral_idempotency_cap` | 100000 | Per-process LRU bound on the idempotency cache. |
+
+Operators tune these per available RAM. Rough budget: each event consumes ~event_size + 200 bytes of bookkeeping; a 2000-event/namespace × 10-namespace deployment with 4 KB events caps at ~80 MB.
+
+#### Discovery advertisement
+
+The Hub MUST advertise its storage profile so peers can size their durable-peer requirements:
+
+- `GET /fabric/v1/discover` response includes `storage_profile: "ephemeral"` and `storage_limits` (see fabric-spec §Discovery).
+- mDNS TXT record (if mDNS is enabled — see `local-network-spec-001-v1.1.md`) includes `storage=ephemeral`.
+
+A `durable` Hub MAY omit `storage_limits` from `/discover` (its limits are typically much higher than ephemeral's and operator-tunable per data-dir capacity).
+
+#### Conformance
+
+An ephemeral Hub MUST pass the same 32-test conformance suite as a durable Hub. The suite is run with the Hub fresh from boot and is not expected to test restart behavior; restart-data-loss is a documented behavior of the mode, not a conformance failure.
+
+Tests that exercise idempotency replay (verifying that the same idempotency key returns the same response) work because the idempotency cache is in-process and lives for the suite's duration. They do not test cross-restart idempotency, which an ephemeral Hub does not provide.
+
+#### Operational notes
+
+- **Restart = data loss.** Operators MUST treat an ephemeral Hub as a sync convenience, not a system of record. Any namespace served only by ephemeral Hubs is one coincident restart away from total data loss.
+- **Identity continuity.** The Hub identity file is the one piece that MUST be backed up if the operator wants peers' fingerprint pins to survive a host reinstall. Treat `hub-identity.json` the same way you would in durable mode.
+- **No `backup`/`restore`.** These CLI commands are no-ops on ephemeral — there is nothing in-RAM worth snapshotting at the point a backup is taken (the live state changes on every append).
+- **Memory pressure.** Operators MUST size `ephemeral_max_*` for the available RAM. Eviction is FIFO + age-based; there is no swap-to-disk fallback.
+- **Bind address.** Like durable mode, ephemeral binds to `127.0.0.1` by default; opening to the LAN is a deliberate operator action via reverse proxy, listen-address change, or mesh.
+
+#### Use cases
+
+- **LAN-anchor for browser-first apps** — e.g., a team chat single-file HTML app discovers a LAN ephemeral Hub via mDNS through the bridge; the Hub buffers messages so devices that come online at different times still sync. Canonical durability for the same namespace lives in a remote Hub or CF Worker.
+- **Dev environments** — running `nakli-hub --storage=ephemeral` locally during development avoids stale SQLite state between test runs.
+- **Confidence-mode rollouts** — operators evaluating a new Hub binary against production traffic without committing to durability.
+
+#### When NOT to use ephemeral
+
+- As the only Vault peer in a fabric. Don't.
+- For History streams where the operator wants long-term audit (History's hash-chain integrity is only meaningful across the events the Hub remembers).
+- For workloads with `requires-human-approval` flows where pending operations need to survive a restart.
+- As the discharge verifier for revocations (revocation history must be durable, or revocations don't outlast a restart).
 
 ---
 
@@ -629,15 +715,26 @@ Metrics are local-only; Hub does not push anywhere. Operators can scrape from a 
 ## Security posture
 
 ### What the Hub holds in clear
+
+Durable mode:
 - Hub's own keypair (`hub-identity.json` — sensitive!)
 - SQLite metadata: principal IDs, public keys, stream names, event IDs, vector clocks, timestamps, grant scopes
 - Idempotency response bodies (which contain event IDs but not payloads)
 - Operation log
 
+Ephemeral mode:
+- Hub's own keypair (`hub-identity.json` — sensitive! Only on-disk artifact.)
+- All of the above, but **in RAM only** — lost on restart. Memory pages MAY be swapped by the OS unless the operator disables swap or runs the Hub with `mlockall` / equivalent.
+
 ### What the Hub holds encrypted
+
+Durable mode:
 - Event payloads (in `blobs/`)
 - All user data
 - Bridge credentials (in transit only; never persisted by Hub)
+
+Ephemeral mode:
+- Event payload ciphertext sits in RAM only (no `blobs/` directory written). The same client-side encryption applies — the Hub never sees plaintext in either mode.
 
 ### What the Hub never sees
 - User passphrases (used only client-side for FIF)
@@ -707,9 +804,9 @@ Test failures block release. Conformance is verified per commit in CI.
 - Built-in HTTPS termination (use reverse proxy)
 - Web admin UI
 - Multi-node Hub clustering
-- Storage backends other than SQLite + filesystem
+- Storage backends other than SQLite + filesystem (durable) or bounded RAM ring buffer (ephemeral) — e.g., Postgres, Redis, S3-as-blob-store
 - Stream archival / cold storage
-- Per-event TTL (events are persistent until namespace deletion)
+- Per-event TTL in `durable` mode (events are persistent until namespace deletion; ephemeral mode has age-based eviction by design — see §Storage modes)
 - Namespace deletion (deferred to v1.x)
 - Quotas per principal
 

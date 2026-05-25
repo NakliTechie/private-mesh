@@ -261,6 +261,25 @@ A consumer connected to BOTH local peers AND a remote Hub:
 
 If no consumer is gateway-capable (e.g., everyone is browser-only and the Hub is unreachable), local peers sync amongst themselves; when the Hub returns, the next-connected consumer reconciles.
 
+### LAN-anchor pattern (ephemeral Vault peer)
+
+Pure peer-to-peer sync only works when at least two peers are simultaneously online. For LAN deployments where devices come and go at different times (e.g., a team chat app on the office network, where laptops open and close at different times), at least one peer must hold events while the others are offline.
+
+The canonical solution is the **LAN anchor**: an always-on device on the same network running `nakli-hub --storage=ephemeral`. It is a full Vault peer (implements the entire fabric protocol, verifies macaroons, advertises via mDNS), but its event storage is a bounded RAM ring buffer (per `hub-spec-001-v1.1.md` §Storage modes). Restart loses events; the transport identity is preserved so peers' fingerprint pins still hold.
+
+Sequence:
+1. Operator installs `nakli-hub` on an always-on LAN device (NAS, Pi, always-on laptop).
+2. Starts it with `--storage=ephemeral` (or sets `storage.mode = "ephemeral"` in config).
+3. Hub announces via mDNS with `storage=ephemeral` in its TXT record and `storage_profile: "ephemeral"` in `/fabric/v1/discover`.
+4. Other LAN peers discover it through the bridge (or directly, for native consumers).
+5. Apps send Vault appends to this peer just like they would to a durable Hub or the CF Worker. The peer buffers events; later-arriving peers fetch what they missed.
+
+**This pattern replaces the antipattern of "ship a custom buffered bridge alongside the app."** Consumer tools do not build their own store-and-forward layers. If LAN S&F is the requirement, an ephemeral Hub answers it; the bridge stays out of the protocol path.
+
+**Durability obligation:** any namespace served by an ephemeral-only LAN-anchor is one restart away from data loss. Deployments SHOULD configure at least one durable peer (a remote Hub on the user's anchor box, or `nakli-cf-worker`) so the canonical event history survives.
+
+**vs the bridge:** the bridge is a discovery + signaling helper. It does not hold Vault state. The LAN anchor is a separate process; on small deployments they may run on the same machine, but they are conceptually distinct.
+
 ---
 
 ## Browser-specific implementation
@@ -304,6 +323,8 @@ Relays WebRTC signaling messages between browser peers.
 - Bridge forwards `signal_type` and `payload` to the target peer (if locally reachable)
 
 The bridge does NOT process Fabric Protocol; it only facilitates discovery and signaling. The browser's JS SDK uses the bridge for these out-of-band operations.
+
+**This is a deliberate boundary.** Apps that need LAN store-and-forward MUST NOT extend the bridge to hold envelopes or implement Vault endpoints. The bridge stays thin so its trust posture stays simple (sees only mDNS announcements + WebRTC signaling envelopes; never holds protocol state, never verifies macaroons, never stores ciphertext). For LAN S&F, run an ephemeral Vault peer alongside the bridge — see §LAN-anchor pattern.
 
 ### Bridge availability detection
 
@@ -370,18 +391,19 @@ When a user shares their phone's hotspot with a laptop, both devices are on the 
 
 ## Comparison vs other transports
 
-| Property | Hub | CF Worker | Local Network |
-|---|---|---|---|
-| Requires internet | No (LAN to Hub OK) | Yes | No |
-| Requires user-run server | Yes | No | Bridge or Hub |
-| Sovereignty | Highest | Cloud (Cloudflare) | Highest |
-| Failure resilience | Single point | Cloud uptime | Per-peer |
-| Setup complexity | Moderate | Easy | Trivial (auto-discover) |
-| Scale | Self-tunable | Cloud-scale | 1-25 peers |
-| Push delivery | SSE | SSE / polling | WebRTC stream |
-| Cross-subnet | Yes | Yes | No |
+| Property | Hub (durable) | Hub (ephemeral, LAN-anchor) | CF Worker | Local Network (browser ↔ browser) |
+|---|---|---|---|---|
+| Requires internet | No (LAN to Hub OK) | No | Yes | No |
+| Requires user-run server | Yes | Yes (small, on LAN) | No | Bridge (small, on LAN) |
+| Storage profile | `durable` | `ephemeral` | `durable` | n/a (peers only) |
+| Sovereignty | Highest | Highest | Cloud (Cloudflare) | Highest |
+| Failure resilience | Single point | Restart loses events | Cloud uptime | Per-peer |
+| Setup complexity | Moderate | Trivial | Easy | Trivial (auto-discover) |
+| Scale | Self-tunable | 1-25 peers | Cloud-scale | 1-25 peers |
+| Push delivery | SSE | SSE | SSE / polling | WebRTC stream |
+| Cross-subnet | Yes | No (LAN-bound) | Yes | No |
 
-Operators typically run all three: Hub as primary on the anchor, Worker as cloud fallback, Local Network for same-LAN scenarios.
+Operators typically run a combination: a durable Hub on their anchor box (or `nakli-cf-worker` in the cloud) as the canonical store, plus an ephemeral Hub on the LAN as the anchor that browser-first peers reach via the bridge. The bridge itself never holds state — it just helps peers find each other and signals WebRTC connections.
 
 ---
 

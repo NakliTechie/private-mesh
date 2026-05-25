@@ -532,6 +532,30 @@ Subscribe to a stream via SSE for real-time delivery.
 - Request: `{ namespace, stream_id, since_event_id? }`
 - Response: SSE stream of events
 
+#### Storage profiles (v1.0 addendum)
+
+Vault is the protocol's store-and-forward primitive. Every transport implements the endpoints above; the durability profile is a per-deployment storage choice. Two profiles are canonical in v1.0:
+
+| Profile | Crash-survivable | Restart behavior | Typical implementation |
+|---|---|---|---|
+| `durable` | Yes | Events preserved | SQLite + filesystem (Hub); R2 + KV (CF Worker) |
+| `ephemeral` | No | Events evicted; transport identity preserved | Bounded RAM ring buffer (e.g., `nakli-hub --storage=ephemeral`) |
+
+Every Vault implementation MUST advertise its profile via `GET /fabric/v1/discover` (`storage_profile` field, see §Discovery). LAN transports SHOULD also advertise it via mDNS TXT (`storage=durable|ephemeral`).
+
+**Conformance:** both profiles MUST pass the same conformance suite. Ephemeral implementations are NOT exempt from any endpoint, response shape, or caveat-verification requirement. The only behavioral difference is what happens to events on process restart.
+
+**Consumer obligations:**
+- Treat ephemeral peers as **sync convenience**, not durable storage.
+- Configure at least one durable peer in the fabric. A fabric with only ephemeral peers risks total data loss on a coincident restart.
+- Do NOT issue a `vault:write` Grant with `requires-human-approval` to an ephemeral peer alone — the pending operation can be lost.
+- When reading from a stream replicated across both profiles, prefer the durable peer for backfill; use the ephemeral peer for recent-event subscribe convenience.
+
+**Transport obligations (ephemeral):**
+- Document the eviction policy (capacity per namespace, age-based TTL).
+- On eviction, the event is gone — do not silently drop with a "200 OK" on a subsequent read. Return whatever the current head + `more=false` indicates.
+- Persist the transport's own identity (keypair) across restarts so peers that pinned the fingerprint continue to recognize it.
+
 ### History
 
 History is a specialization of Vault with extra structure. The endpoints are:
@@ -738,12 +762,21 @@ Returns transport capability and topology information.
       "supported_primitives": ["vault", "history", "sync", "grant", "identity", "llm", "bridge"],
       "supported_caveats": ["time", "rate", "max-amount", "only-domain", "requires-human-approval", ...],
       "max_event_size_bytes": 1048576,
-      "max_idempotency_window_seconds": 86400
+      "max_idempotency_window_seconds": 86400,
+      "storage_profile": "durable|ephemeral",
+      "storage_limits": {
+        "max_events_per_namespace": 2000,
+        "max_event_age_seconds": 86400
+      }
     }
   }
   ```
 
 This endpoint enables consumers to verify capabilities before attempting operations.
+
+`storage_profile` is required when the transport implements Vault. See §Vault — Storage profiles.
+
+`storage_limits` is REQUIRED for transports with `storage_profile = "ephemeral"` (so consumers can size their durable-peer requirements). It is OPTIONAL for `durable` transports (whose limits are operator-configured and typically much higher).
 
 ---
 
