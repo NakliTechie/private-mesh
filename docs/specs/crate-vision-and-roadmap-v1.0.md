@@ -247,7 +247,7 @@ All of them currently solve this with "pick a folder via FSA" or "download to OP
 - Better conflict UX (currently: lose-event → `_conflicts/` folder)
 
 ### v1.4 — cross-tool consumption
-- nakliOS integration: nakliOS picks a Crate as its root
+- NakliOS integration: NakliOS picks a Crate as its root
 - "Send to" menu for handing files between tools
 - Per-folder encryption keys (share a folder without sharing master key)
 

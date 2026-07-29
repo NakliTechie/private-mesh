@@ -136,7 +136,7 @@ func (s *Store) LookupCrateBucket(ctx context.Context, bucketID string) (*CrateB
 
 // ListCrateBucketsByPrincipal returns all buckets registered by a principal,
 // most-recently-created first. Used by the (deferred) user-facing bucket list
-// in nakliOS Settings.
+// in NakliOS Settings.
 func (s *Store) ListCrateBucketsByPrincipal(ctx context.Context, principal string) ([]CrateBucket, error) {
 	rows, err := s.db.QueryContext(ctx, `
         SELECT bucket_id, provider, account_id, region, bucket_name,
@@ -202,7 +202,7 @@ func (s *Store) TouchCrateBucketLastUsed(ctx context.Context, bucketID string) e
 
 // DeleteCrateBucket removes a bucket registration (for future bucket-management
 // endpoints). Used today only by tests; the user-facing delete handler is
-// deferred to the nakliOS Settings milestone.
+// deferred to the NakliOS Settings milestone.
 func (s *Store) DeleteCrateBucket(ctx context.Context, bucketID string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM crate_buckets WHERE bucket_id = ?`, bucketID)
 	if err != nil {

@@ -217,7 +217,7 @@ func (s *Server) handleCrateBucketMetadata(w http.ResponseWriter, r *http.Reques
 // --- GET /v1/crate/bucket -------------------------------------------------
 //
 // Lists all buckets registered by the calling principal. Used by the future
-// nakliOS "Connect Crate" Settings panel to surface "your buckets" in a
+// NakliOS "Connect Crate" Settings panel to surface "your buckets" in a
 // picker; also useful for `nakli-cli crate-bucket list` (deferred to M5+).
 // Auth: identity:pair (same as register — the principal owns these rows).
 

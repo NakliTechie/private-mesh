@@ -488,7 +488,7 @@ func TestCrateBucket_Object_UnknownBucket404(t *testing.T) {
 }
 
 // TestCrateBucket_List verifies GET /v1/crate/bucket returns all buckets
-// registered by the calling principal — used by future nakliOS Settings
+// registered by the calling principal — used by future NakliOS Settings
 // "your buckets" UI.
 //
 // Critical: ALL THREE calls (two registers + one list) reuse the SAME
