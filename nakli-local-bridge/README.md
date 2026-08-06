@@ -80,11 +80,22 @@ Single-file `main.go` (≤160 LOC); the heavy lifting lives in [`fabric-sdk-go/l
 - The bridge announces its own presence on mDNS so other peers can confirm it's reachable for WebRTC signaling. Disable with `--announce=false` if you only want discovery without being visible.
 - Browser tools should treat the bridge as untrusted middleware: the protocol Grants still gate every operation; the bridge just connects browsers to peers.
 
+## Git egress (planned)
+
+The same daemon gains a **git-aware relay** so browser tools can reach real git hosts
+over HTTPS — the sovereign alternative to a hosted CORS proxy (the user's own machine
+relays; it stores nothing, logs nothing). This is the Bridge workstream of the
+`agentverse` coding-agent initiative (`NakliTechie/agentverse`); the git core that
+consumes it is Rig, in `NakliTechie/nakliOS` `sys/rig/`. Chunks B0–B3 and the
+machine-checkable checkpoints: [`docs/git-egress-spec-001-v1.0.md`](docs/git-egress-spec-001-v1.0.md).
+No hosted CORS proxy, no second broker, no force-push, agent push to `agent/*` only.
+
 ## Roadmap
 
 - M7 (done): mDNS announce + browse; HTTP `/local/peers`
 - M7.x: WebRTC signaling relay, WebSocket peer-list streaming, mDNS challenge/response
 - M9: signed releases, service-unit templates
+- Git egress (B0–B3, agentverse): git-aware smart-HTTP relay + GitHub-API fallback + push safety
 
 ## License
 
